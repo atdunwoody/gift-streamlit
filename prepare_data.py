@@ -15,7 +15,7 @@ from types import SimpleNamespace
 from tools.prepare_network import GROUPS, prepare_network
 
 ROOT = Path(__file__).resolve().parent
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 _BUILD_LOCK = threading.RLock()
 
 
@@ -63,26 +63,39 @@ def file_hash(path):
     return _hash_at_stat(str(path), (stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns, stat.st_ino))
 
 
+def portable_path(path):
+    """Identify repository assets independently of the machine's absolute root.
+
+    Files outside this repository retain absolute paths, so two identically
+    named external sources are never treated as interchangeable.
+    """
+    path = Path(path).expanduser().resolve()
+    try:
+        return path.relative_to(ROOT).as_posix()
+    except ValueError:
+        return str(path)
+
+
 def source_state(config, options):
-    """Hash every input by role and full path, including curves and model code."""
+    """Hash source contents, settings and model code with portable paths."""
     files = []
     for role in ("network", "max_depth", "priority"):
         path = options[f"{role}_path"]
-        files.append(dict(role=role, path=str(path), sha256=file_hash(path)))
+        files.append(dict(role=role, path=portable_path(path), sha256=file_hash(path)))
         # GeoPackage edits may be committed to SQLite's write-ahead log first.
         wal = Path(str(path) + "-wal")
         if path.suffix.lower() == ".gpkg" and wal.is_file():
-            files.append(dict(role=f"{role}_wal", path=str(wal), sha256=file_hash(wal)))
+            files.append(dict(role=f"{role}_wal", path=portable_path(wal), sha256=file_hash(wal)))
     for key, _, _ in GROUPS:
         for kind in ("depth", "velocity", "substrate"):
             path = options["curves_directory"] / f"{key}_{kind}.csv"
-            files.append(dict(role=f"curve:{key}:{kind}", path=str(path), sha256=file_hash(path)))
+            files.append(dict(role=f"curve:{key}:{kind}", path=portable_path(path), sha256=file_hash(path)))
     code = {}
     for relative in ("prepare_data.py", "tools/prepare_network.py", "model/gift_habitat/hydraulics.py",
                      "model/gift_habitat/habitat.py", "model/gift_habitat/_validation.py"):
         code[relative] = file_hash(ROOT / relative)
     state = dict(schemaVersion=SCHEMA_VERSION, title=config.APP_TITLE,
-                 configuration={k: str(v) if isinstance(v, Path) else v for k, v in options.items()},
+                 configuration={k: portable_path(v) if isinstance(v, Path) else v for k, v in options.items()},
                  inputs=files, calculationCodeSHA256=code)
     encoded = json.dumps(state, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest(), state

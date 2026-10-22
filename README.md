@@ -32,9 +32,11 @@ needed by the running app.
    launcher uses that interpreter, starts Streamlit, and opens
    **http://localhost:8501**. Stop the terminal with **Ctrl+C**.
 
-The prepared dataset is included. The app checks it against the configured files
-and fields and rebuilds it automatically when needed, including after extraction
-to a new location. Run the launcher rather than running `app.py` as a plain Python script. If needed, the
+The prepared dataset is included. Repository-relative paths are recorded in the
+prepared-data manifest, so extracting, moving, or deploying the same project does
+not trigger recomputation. The app still verifies the configured files and fields,
+and rebuilds if source contents, settings, model code, or prepared outputs change.
+Run the launcher rather than running `app.py` as a plain Python script. If needed, the
 equivalent terminal command is `python -m streamlit run app.py`.
 
 ### Updating an existing installation
@@ -141,7 +143,7 @@ set the months appropriate to the uploaded curves.
   `MAX_DEPTH_LAYER`, joined by the configured ID fields. By default this is
   `bf_depth_max_pred_m` in the same streams GeoPackage.
 - **Temperature and priority:** `currTempScoreKSee`, `High priority combined`,
-  and `FinalScore_cat` are joined by `COMID` from the `UGR` layer of
+  and `FinalScore_cat` are joined by `COMID` from the `provisional_model_layer` layer of
   `inputs/Provisional_Model_Layer.gpkg`, the supplied Provisional Model Layer
   GeoPackage. All 728 stream COMIDs match, with no null temperature or priority
   scores. The original CSV remains available but is not the active score source.
@@ -236,8 +238,10 @@ An invalid configuration stops the app with a useful error instead of showing
 results from an old source.
 
 The rebuild is prepared separately and published only after it succeeds.
-Input hashes are recorded by source role and full path, so two files with the
-same basename cannot overwrite each other's provenance. The app's
+Input hashes are recorded by source role and repository-relative path for bundled
+inputs (or absolute path for external files). Each source is additionally checked
+by SHA-256, so similarly named but different sources cannot silently reuse a
+prepared dataset. The app's
 **Input sources and field mappings** panel and exported diagnostics report the
 actual selected files and columns. **Model input values** shows the selected
 reach's bankfull width, mean/maximum depth, slope, and D84 in SI units.
@@ -260,7 +264,7 @@ This is a server-based Streamlit app. Use a Streamlit-compatible host, such as
 **Streamlit Community Cloud**, rather than uploading its files as a static site.
 The previous Vercel static deployment configuration is not used.
 
-1. Add the **contents of gift_streamlit** to a GitHub repository you control.
+1. Add the **contents of gift-streamlit** to a GitHub repository you control.
    Keep `app.py`, `requirements.txt`, `.streamlit/config.toml`, `static/`, `data/`,
    `model/`, and all supporting Python modules. The `inputs/` and `tests/`
    folders can stay in the repository for reproducibility.
@@ -284,6 +288,12 @@ port 8501. Such hosting can support a custom domain and dedicated resources.
 ## Performance and validation
 
 Prepared hydraulics avoid rerunning the geometry model during interaction.
+The bundled `data/network.json`, `data/curves.json`, and 727 native hydraulic
+response files are reused on first startup when source hashes match. A full
+hydraulic rebuild is required only if the underlying inputs, configured fields,
+model preparation code, or output files change. Moving the repository does not
+invalidate the prepared dataset. The manifest is portable across Windows and Linux.
+
 The app caches the dataset, full-network monthly habitat by curve set, and
 native response curves for recently selected segments. The main map/inspector/
 plot workspace is a Streamlit fragment, so its interactions can rerun without

@@ -241,14 +241,23 @@ def prepare_network(*, network_path, network_layer, max_depth_path, max_depth_la
             fixtures.append({"id": comid, "tests": tests})
         if (i+1) % 150 == 0:
             print(f"Prepared {i+1}/{len(rows)} reaches", flush=True)
+    # Store relative source references for files shipped with the application.
+    # External inputs remain absolute for unambiguous provenance.
+    def source_display_path(path):
+        path = Path(path).resolve()
+        try:
+            return path.relative_to(ROOT).as_posix()
+        except ValueError:
+            return str(path)
+
     metadata = {
-        "base": NETWORK_PATH.name, "basePath": str(NETWORK_PATH.resolve()), "baseLayer": NETWORK_LAYER,
-        "prioritySource": PRIORITY_PATH.name, "priorityPath": str(PRIORITY_PATH.resolve()),
+        "base": NETWORK_PATH.name, "basePath": source_display_path(NETWORK_PATH), "baseLayer": NETWORK_LAYER,
+        "prioritySource": PRIORITY_PATH.name, "priorityPath": source_display_path(PRIORITY_PATH),
         "priorityLayer": PRIORITY_LAYER, "join": network_fields["id"], "featureCount": len(features),
         "priorityMatches": len(features)-len(unmatched), "unmatchedPriority": unmatched,
         "skippedHydraulics": skipped, "shapeFactorCapped": [], "shapeFactorAbove07": above_07,
         "shapeMethod": "1 - mean bankfull depth / maximum bankfull depth; no cap",
-        "maxDepthSource": MAX_DEPTH_PATH.name, "maxDepthPath": str(MAX_DEPTH_PATH.resolve()),
+        "maxDepthSource": MAX_DEPTH_PATH.name, "maxDepthPath": source_display_path(MAX_DEPTH_PATH),
         "maxDepthLayer": MAX_DEPTH_LAYER, "maxDepthField": max_depth_field,
         "maxDepthMatches": sum(r[network_fields["id"]] in max_depths for r in rows),
         "networkFields": network_fields, "priorityFields": priority_fields,

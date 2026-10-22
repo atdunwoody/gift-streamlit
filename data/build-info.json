@@ -1,15 +1,15 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "title": "GIFT Habitat Explorer",
   "configuration": {
-    "network_path": "C:\\Users\\AlexThornton-Dunwood\\OneDrive - Lichen Land & Water\\Documents\\GitHub\\gift_streamlit\\inputs\\UGR_channel_geometry_predictions_monthly_EROM.gpkg",
+    "network_path": "inputs/UGR_channel_geometry_predictions_monthly_EROM.gpkg",
     "network_layer": "channel_geometry_predictions",
-    "max_depth_path": "C:\\Users\\AlexThornton-Dunwood\\OneDrive - Lichen Land & Water\\Documents\\GitHub\\gift_streamlit\\inputs\\UGR_channel_geometry_predictions_monthly_EROM.gpkg",
+    "max_depth_path": "inputs/UGR_channel_geometry_predictions_monthly_EROM.gpkg",
     "max_depth_layer": "channel_geometry_predictions",
-    "priority_path": "C:\\Users\\AlexThornton-Dunwood\\OneDrive - Lichen Land & Water\\Documents\\GitHub\\gift_streamlit\\inputs\\Provisional_Model_Layer.gpkg",
-    "priority_layer": "UGR",
-    "curves_directory": "C:\\Users\\AlexThornton-Dunwood\\OneDrive - Lichen Land & Water\\Documents\\GitHub\\gift_streamlit\\inputs\\curves",
-    "output_directory": "C:\\Users\\AlexThornton-Dunwood\\OneDrive - Lichen Land & Water\\Documents\\GitHub\\gift_streamlit\\data",
+    "priority_path": "inputs/Provisional_Model_Layer.gpkg",
+    "priority_layer": "provisional_model_layer",
+    "curves_directory": "inputs/curves",
+    "output_directory": "data",
     "network_fields": {
       "id": "COMID",
       "name": "GNIS_NAME",
@@ -98,118 +98,118 @@
   "inputs": [
     {
       "role": "network",
-      "path": "C:\\Users\\AlexThornton-Dunwood\\OneDrive - Lichen Land & Water\\Documents\\GitHub\\gift_streamlit\\inputs\\UGR_channel_geometry_predictions_monthly_EROM.gpkg",
+      "path": "inputs/UGR_channel_geometry_predictions_monthly_EROM.gpkg",
       "sha256": "5b8cb4796d923f0c9a0cb88e09c861b71d254d9c2e7f524acf6255c041bb3319"
     },
     {
       "role": "max_depth",
-      "path": "C:\\Users\\AlexThornton-Dunwood\\OneDrive - Lichen Land & Water\\Documents\\GitHub\\gift_streamlit\\inputs\\UGR_channel_geometry_predictions_monthly_EROM.gpkg",
+      "path": "inputs/UGR_channel_geometry_predictions_monthly_EROM.gpkg",
       "sha256": "5b8cb4796d923f0c9a0cb88e09c861b71d254d9c2e7f524acf6255c041bb3319"
     },
     {
       "role": "priority",
-      "path": "C:\\Users\\AlexThornton-Dunwood\\OneDrive - Lichen Land & Water\\Documents\\GitHub\\gift_streamlit\\inputs\\Provisional_Model_Layer.gpkg",
-      "sha256": "e36abf5e116cabe7dbd38f1eed3ea2a3bb706116c1edb3ad3978bef5a7021ae1"
+      "path": "inputs/Provisional_Model_Layer.gpkg",
+      "sha256": "229ecce02c0f88980a6501dc61e70aa836749f54c6ee8b3d8a24dbbe6dc33ee1"
     },
     {
       "role": "curve:chinook_juvenile_rearing:depth",
-      "path": "C:\\Users\\AlexThornton-Dunwood\\OneDrive - Lichen Land & Water\\Documents\\GitHub\\gift_streamlit\\inputs\\curves\\chinook_juvenile_rearing_depth.csv",
+      "path": "inputs/curves/chinook_juvenile_rearing_depth.csv",
       "sha256": "d9142eea7e8d498ae0452701d8eed4165535d79088669d130249551faebe8ea4"
     },
     {
       "role": "curve:chinook_juvenile_rearing:velocity",
-      "path": "C:\\Users\\AlexThornton-Dunwood\\OneDrive - Lichen Land & Water\\Documents\\GitHub\\gift_streamlit\\inputs\\curves\\chinook_juvenile_rearing_velocity.csv",
+      "path": "inputs/curves/chinook_juvenile_rearing_velocity.csv",
       "sha256": "c29db7b4d51c0bf34a2da5f0f86de51f4ce8ee9f02cb4de169306b42d60d7984"
     },
     {
       "role": "curve:chinook_juvenile_rearing:substrate",
-      "path": "C:\\Users\\AlexThornton-Dunwood\\OneDrive - Lichen Land & Water\\Documents\\GitHub\\gift_streamlit\\inputs\\curves\\chinook_juvenile_rearing_substrate.csv",
+      "path": "inputs/curves/chinook_juvenile_rearing_substrate.csv",
       "sha256": "7618e29ee1dc054ab494a22617ba4f376825d5ca5e17e0709aaa53ae4d2816b8"
     },
     {
       "role": "curve:chinook_spawning_stream_river:depth",
-      "path": "C:\\Users\\AlexThornton-Dunwood\\OneDrive - Lichen Land & Water\\Documents\\GitHub\\gift_streamlit\\inputs\\curves\\chinook_spawning_stream_river_depth.csv",
+      "path": "inputs/curves/chinook_spawning_stream_river_depth.csv",
       "sha256": "4650b7cddbfcf4b79cd51b6dc1b51201dc8229d9b9c2d84c6febcb710a3bd1fa"
     },
     {
       "role": "curve:chinook_spawning_stream_river:velocity",
-      "path": "C:\\Users\\AlexThornton-Dunwood\\OneDrive - Lichen Land & Water\\Documents\\GitHub\\gift_streamlit\\inputs\\curves\\chinook_spawning_stream_river_velocity.csv",
+      "path": "inputs/curves/chinook_spawning_stream_river_velocity.csv",
       "sha256": "1224b28e59025787df233f326c0e250fd3703f58f5d55cc3c87411cd171d9f41"
     },
     {
       "role": "curve:chinook_spawning_stream_river:substrate",
-      "path": "C:\\Users\\AlexThornton-Dunwood\\OneDrive - Lichen Land & Water\\Documents\\GitHub\\gift_streamlit\\inputs\\curves\\chinook_spawning_stream_river_substrate.csv",
+      "path": "inputs/curves/chinook_spawning_stream_river_substrate.csv",
       "sha256": "f0abf65c8060feaf04dbeab23c12792f68b9488436e6cc256918f64cc7cac79b"
     },
     {
       "role": "curve:chinook_spawning_large_river:depth",
-      "path": "C:\\Users\\AlexThornton-Dunwood\\OneDrive - Lichen Land & Water\\Documents\\GitHub\\gift_streamlit\\inputs\\curves\\chinook_spawning_large_river_depth.csv",
+      "path": "inputs/curves/chinook_spawning_large_river_depth.csv",
       "sha256": "a4dc126ddbac320a66631b98cc0c2f461cee07769d4894596904df698d079c65"
     },
     {
       "role": "curve:chinook_spawning_large_river:velocity",
-      "path": "C:\\Users\\AlexThornton-Dunwood\\OneDrive - Lichen Land & Water\\Documents\\GitHub\\gift_streamlit\\inputs\\curves\\chinook_spawning_large_river_velocity.csv",
+      "path": "inputs/curves/chinook_spawning_large_river_velocity.csv",
       "sha256": "bea4eec322b9025f9cc8bb0b5328056137608a5d06cbc0c8af33a562c738d18c"
     },
     {
       "role": "curve:chinook_spawning_large_river:substrate",
-      "path": "C:\\Users\\AlexThornton-Dunwood\\OneDrive - Lichen Land & Water\\Documents\\GitHub\\gift_streamlit\\inputs\\curves\\chinook_spawning_large_river_substrate.csv",
+      "path": "inputs/curves/chinook_spawning_large_river_substrate.csv",
       "sha256": "f0abf65c8060feaf04dbeab23c12792f68b9488436e6cc256918f64cc7cac79b"
     },
     {
       "role": "curve:steelhead_juvenile_rearing:depth",
-      "path": "C:\\Users\\AlexThornton-Dunwood\\OneDrive - Lichen Land & Water\\Documents\\GitHub\\gift_streamlit\\inputs\\curves\\steelhead_juvenile_rearing_depth.csv",
+      "path": "inputs/curves/steelhead_juvenile_rearing_depth.csv",
       "sha256": "56d70ea3c5d71a573af6a7c39efec51b13e1d74f857486ea1ef8ed85f6af476d"
     },
     {
       "role": "curve:steelhead_juvenile_rearing:velocity",
-      "path": "C:\\Users\\AlexThornton-Dunwood\\OneDrive - Lichen Land & Water\\Documents\\GitHub\\gift_streamlit\\inputs\\curves\\steelhead_juvenile_rearing_velocity.csv",
+      "path": "inputs/curves/steelhead_juvenile_rearing_velocity.csv",
       "sha256": "6662c5fdeebd4300571e953f92ea675acc4236edba1430a286f5b5a642a5847a"
     },
     {
       "role": "curve:steelhead_juvenile_rearing:substrate",
-      "path": "C:\\Users\\AlexThornton-Dunwood\\OneDrive - Lichen Land & Water\\Documents\\GitHub\\gift_streamlit\\inputs\\curves\\steelhead_juvenile_rearing_substrate.csv",
+      "path": "inputs/curves/steelhead_juvenile_rearing_substrate.csv",
       "sha256": "7618e29ee1dc054ab494a22617ba4f376825d5ca5e17e0709aaa53ae4d2816b8"
     },
     {
       "role": "curve:steelhead_spawning:depth",
-      "path": "C:\\Users\\AlexThornton-Dunwood\\OneDrive - Lichen Land & Water\\Documents\\GitHub\\gift_streamlit\\inputs\\curves\\steelhead_spawning_depth.csv",
+      "path": "inputs/curves/steelhead_spawning_depth.csv",
       "sha256": "84a7b3372fb671dca1776e6b4a9fb5f3f79aa01e0ba14f6a440a03164399d796"
     },
     {
       "role": "curve:steelhead_spawning:velocity",
-      "path": "C:\\Users\\AlexThornton-Dunwood\\OneDrive - Lichen Land & Water\\Documents\\GitHub\\gift_streamlit\\inputs\\curves\\steelhead_spawning_velocity.csv",
+      "path": "inputs/curves/steelhead_spawning_velocity.csv",
       "sha256": "54acb6342e1a6e10510dd36fa3142d4dd09002a57617b532e48f183bb39b845d"
     },
     {
       "role": "curve:steelhead_spawning:substrate",
-      "path": "C:\\Users\\AlexThornton-Dunwood\\OneDrive - Lichen Land & Water\\Documents\\GitHub\\gift_streamlit\\inputs\\curves\\steelhead_spawning_substrate.csv",
+      "path": "inputs/curves/steelhead_spawning_substrate.csv",
       "sha256": "1f8acafea31d31c3b821835abdafcfd40f806f6285804e4e21a368c3effcf6db"
     },
     {
       "role": "curve:salmonid_general_sensitivity:depth",
-      "path": "C:\\Users\\AlexThornton-Dunwood\\OneDrive - Lichen Land & Water\\Documents\\GitHub\\gift_streamlit\\inputs\\curves\\salmonid_general_sensitivity_depth.csv",
+      "path": "inputs/curves/salmonid_general_sensitivity_depth.csv",
       "sha256": "9e2899a2794a5405b2f1a7c11b734984d7ddc4e065e7bab89354ffe488619ecd"
     },
     {
       "role": "curve:salmonid_general_sensitivity:velocity",
-      "path": "C:\\Users\\AlexThornton-Dunwood\\OneDrive - Lichen Land & Water\\Documents\\GitHub\\gift_streamlit\\inputs\\curves\\salmonid_general_sensitivity_velocity.csv",
+      "path": "inputs/curves/salmonid_general_sensitivity_velocity.csv",
       "sha256": "655d7aad516b8c27dff894becd963344f45cf67e35547c0e8d1de7090e619718"
     },
     {
       "role": "curve:salmonid_general_sensitivity:substrate",
-      "path": "C:\\Users\\AlexThornton-Dunwood\\OneDrive - Lichen Land & Water\\Documents\\GitHub\\gift_streamlit\\inputs\\curves\\salmonid_general_sensitivity_substrate.csv",
+      "path": "inputs/curves/salmonid_general_sensitivity_substrate.csv",
       "sha256": "7705e40bc5a0362588720377f611e4169febfa504baf3ac476b6abd24960069c"
     }
   ],
   "calculationCodeSHA256": {
-    "prepare_data.py": "49720ac727b787e994751eb24c4b6e345cc87b873606b59ec673b02c4e576fe5",
-    "tools/prepare_network.py": "623219587480c1ccd3683ac009e5dde5d2049b1165a1ae434d431d5ea8ae37d5",
+    "prepare_data.py": "b4b8346849d2f5131ba45dead75a7827421af432a5eafef9efec5b62e7e4141c",
+    "tools/prepare_network.py": "b0a0a5650c3e2f955fe8553c6f8f3bb774a7b42b79aed92f7f820341a6d4923a",
     "model/gift_habitat/hydraulics.py": "f6a0875ddf2689b8effae29e9afc31b90f4dbb17840a26e4452c80cb5d9f2e41",
     "model/gift_habitat/habitat.py": "e74f2e4dec7a88f26d319c5cdc82f75a38e33937b93d82174930bbbc6e94a3c4",
     "model/gift_habitat/_validation.py": "dc4c319e6ce5e535cfa96ce38167a684dfc7051e6954a59b800a86a00038ca29"
   },
-  "fingerprint": "ebfbe79a54aef7c5610401fcecfa48e5d5b8c3c873f048da56daa9eade73d6a2",
+  "fingerprint": "e3fab4cb897e6b0878cd66f1b71983ef2aa01004ed57655b77ddadc4b95065f4",
   "outputs": {
     "curves/chinook_juvenile_rearing_depth.csv": "d9142eea7e8d498ae0452701d8eed4165535d79088669d130249551faebe8ea4",
     "curves/chinook_juvenile_rearing_substrate.csv": "7618e29ee1dc054ab494a22617ba4f376825d5ca5e17e0709aaa53ae4d2816b8",
@@ -957,9 +957,10 @@
     "hydraulics/23431100.bin": "3a0ee38a4150b11e8062e7af3a7cf067c0d4d3e283c967c61bc4b4f326c8d77a",
     "hydraulics/947060053.bin": "e50d7a527b6977bfad8e78fb3b4d60a1eb6d9ada0ad04edd796451b0bb38bbbe",
     "hydraulics/947060054.bin": "73d75b465058b87f2b29b2c0bcead735d5f1ab60eff2f1a443ab5ef4b1d91dfd",
-    "network.json": "6262af29aa3f35349c25c909b91924f1978049b818937924e0e37b3128e3e5ea"
+    "network.json": "f2c6e57bff5eccad9d04ef77c74a347b80992bcdf8ea1e2546d6b62a637fa3cd"
   },
   "builtAt": "2026-10-22T22:10:31.895187+00:00",
   "aggregation": "Median of separately evaluated monthly habitat results.",
-  "requireAllMonthsDefault": true
+  "requireAllMonthsDefault": true,
+  "portablePaths": true
 }

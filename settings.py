@@ -5,6 +5,8 @@ prepare_data.py can also be run directly in VSCode for an explicit rebuild.
 """
 from pathlib import Path
 
+# Keep paths anchored to this file, not the current working directory.
+# These work unchanged locally and on Streamlit Community Cloud.
 ROOT = Path(__file__).resolve().parent
 DATA_DIRECTORY = ROOT / "data"
 NETWORK_PATH = ROOT / "inputs/UGR_channel_geometry_predictions_monthly_EROM.gpkg"
@@ -12,7 +14,7 @@ NETWORK_LAYER = "channel_geometry_predictions"
 MAX_DEPTH_PATH = NETWORK_PATH  # Use the active streams file unless a separate source is needed.
 MAX_DEPTH_LAYER = NETWORK_LAYER
 PRIORITY_PATH = ROOT / "inputs/Provisional_Model_Layer.gpkg"  # CSV attribute tables are also supported.
-PRIORITY_LAYER = "UGR"
+PRIORITY_LAYER = "provisional_model_layer"
 CURVES_DIRECTORY = ROOT / "inputs/curves"
 APP_TITLE = "GIFT Habitat Explorer"
 
