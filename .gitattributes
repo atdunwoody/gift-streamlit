@@ -1,2 +1,14 @@
-# Auto detect text files and perform LF normalization
+# Keep working-tree text identical on Windows and Linux for provenance hashes.
 * text=auto
+*.py text eol=lf
+*.csv text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.toml text eol=lf
+Dockerfile text eol=lf
+
+# Prepared hydraulics and source databases must retain their exact bytes.
+*.bin binary
+*.gpkg binary

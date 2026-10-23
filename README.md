@@ -7,20 +7,22 @@ needed by the running app.
 
 ## Install and run in VSCode
 
-1. Extract the ZIP and open the **gift_streamlit** folder in VSCode. This folder
-   contains `app.py`, `run_streamlit.py`, and `environment.yml`.
+1. Extract the ZIP and open the **gift-streamlit** folder in VSCode. This folder
+   contains `app.py`, `run_streamlit.py`, and `requirements.txt`. The local Conda
+   configuration is in `dev/environment.yml`.
 2. In an Anaconda/Miniconda terminal opened in that folder, run:
 
    ```bash
-   conda env create -f environment.yml
+   conda env create -f dev/environment.yml
    conda activate gift_streamlit
    ```
 
-   Alternatively, create the same environment with one command:
+   Alternatively, create the Python environment and install the same packages:
 
    ```bash
-   conda create -n gift_streamlit --override-channels -c conda-forge python=3.12 "streamlit>=1.63,<2" "numpy>=1.26,<3" "pandas>=2.2,<3" "plotly>=6,<7" "pydeck>=0.9.1,<1" "shapely>=2.1,<3" "pyproj>=3.6,<4" -y
+   conda create -n gift_streamlit --override-channels -c conda-forge python=3.12 pip -y
    conda activate gift_streamlit
+   python -m pip install -r requirements.txt
    ```
 
    Use one environment creation method. For an existing Python environment,
@@ -49,6 +51,11 @@ comparison-plot click can refresh the map, inspector, and plots together without
 rebuilding the sidebar. Hidden plots and result tables load when opened.
 The existing environment can be named `gift_webapp` or `gift_streamlit`;
 VSCode and the installation command must use the same environment.
+
+For the deployment-fixes update, remove the old root `environment.yml` after
+copying in the changed files. Its replacement is `dev/environment.yml`. Leaving
+the old file at the repository root makes Community Cloud use Conda instead of
+the pinned `requirements.txt`.
 
 ### Map selection performance
 
@@ -266,8 +273,9 @@ The previous Vercel static deployment configuration is not used.
 
 1. Add the **contents of gift-streamlit** to a GitHub repository you control.
    Keep `app.py`, `requirements.txt`, `.streamlit/config.toml`, `static/`, `data/`,
-   `model/`, and all supporting Python modules. The `inputs/` and `tests/`
-   folders can stay in the repository for reproducibility.
+   `inputs/`, `model/`, and all supporting Python modules. The `inputs/` folder
+   is required for startup source verification. Keep `tests/` for verification.
+   Leave the local Conda file in `dev/`; there must be no root `environment.yml`.
 2. Sign in to [Streamlit Community Cloud](https://share.streamlit.io).
 3. Choose **Create app**, select the repository and branch, and set the
    entrypoint to **app.py**. If the project is nested in another repository,
@@ -282,8 +290,10 @@ Community Cloud's deployment procedure is documented at
 A public hosted URL has not been created by this conversion. The local launcher
 only serves your computer; keep it running while viewing the local app.
 
-For a container host, the included Dockerfile runs the same application on
-port 8501. Such hosting can support a custom domain and dedicated resources.
+For a container host, the included Dockerfile listens on `0.0.0.0` and uses the
+host's `PORT` environment variable, defaulting to 8501 when it is unset. Configure
+the host's target port to match. Such hosting can support a custom domain and
+dedicated resources.
 
 ## Performance and validation
 
@@ -293,6 +303,10 @@ response files are reused on first startup when source hashes match. A full
 hydraulic rebuild is required only if the underlying inputs, configured fields,
 model preparation code, or output files change. Moving the repository does not
 invalidate the prepared dataset. The manifest is portable across Windows and Linux.
+Text assets use LF line endings, enforced by `.gitattributes`, so a Git checkout
+does not invalidate the prepared data through line-ending conversion alone.
+When changing inputs or model preparation code, run `prepare_data.py` in VSCode
+and commit the complete updated `data/` folder before deploying.
 
 The app caches the dataset, full-network monthly habitat by curve set, and
 native response curves for recently selected segments. The main map/inspector/
@@ -325,8 +339,12 @@ transitions, comparison selections, and diagnostic inputs for unavailable result
 
 To run development checks, install `pytest` in this environment and run
 **run_checks.py** in VSCode. The equivalent terminal command is
-`python -m pytest tests -q`. Tested library versions and verification limits
-are recorded in `VALIDATION.md`.
+`python run_checks.py`. This checks the bundled-data manifest before any app test
+can rebuild it, then runs the remaining tests. Run it from a fresh checkout when
+validating a release. Tested library versions and verification limits are
+recorded in `VALIDATION.md`. Production and local package versions are pinned in
+`requirements.txt` and `dev/environment.yml`; transitive dependencies are still
+resolved by pip.
 
 ## License
 

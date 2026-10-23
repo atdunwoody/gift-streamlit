@@ -25,7 +25,8 @@ Install `pytest` for development checks; normal app use does not require it.
 
 The suite verifies numerical agreement with the original R GIFT calculations,
 source joins, configurable fields and units, rebuild behavior, exports, and
-Streamlit controls. **73 tests passed** (`python -m pytest tests -q`).
+Streamlit controls. **75 tests passed** using `python run_checks.py`: two
+prepared-data portability tests ran first, followed by 73 remaining tests.
 
 The frozen R references use revision
 `40c4a74f82d842cd2ab8ab4c53e2b985ac4e0030`, R 4.2.2, dplyr 1.0.10,
@@ -55,6 +56,21 @@ hashes remain in `tests/r_reference` and were not regenerated in this revision.
 Browser rendering, external basemap availability, deployment, and concurrent
 users were not independently tested for this revision. Historical timings in
 README.md do not describe a new performance measurement.
+
+## Deployment fixes
+
+- Text-file LF line endings are enforced by `.gitattributes`; the normalized
+  model sources and regenerated prepared outputs are included in the update.
+- Direct application dependencies are pinned to the tested versions below.
+  Local Conda setup is in `dev/environment.yml`; Cloud uses `requirements.txt`.
+- `run_checks.py` tests bundled-data validity before app tests can rebuild it.
+- Docker startup uses the host's `PORT`, with 8501 as the default.
+- On the Linux verification host, fresh Git clones with `core.autocrlf=false`
+  and `core.autocrlf=true` both passed the two portability tests without a
+  rebuild. This checks Git conversion behavior; it is not a Windows OS test.
+- Model source changes are limited to line endings. Scientific reference tests
+  passed for the regenerated Linux outputs within the existing tolerances.
+- The Docker image was not built, and local Conda creation was not tested here.
 
 ## Tested Python versions
 
