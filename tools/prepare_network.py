@@ -110,17 +110,28 @@ def prepare_network(*, network_path, network_layer, max_depth_path, max_depth_la
                     network_fields, max_depth_id_field, max_depth_field, priority_id_field,
                     priority_fields, temperature_source, temperature_field,
                     monthly_flow_fields, field_units, simplify_meters,
-                    default_periods=None, reference_path=None):
+                    default_periods=None, reference_path=None,
+                    calculate_hydraulics=True, baseline_network=None):
+    """Build an offline snapshot, or read fresh inputs without hydraulic solves.
+
+    With calculate_hydraulics=False and output_directory=None, return an
+    in-memory dataset without creating files. Reuse monthly hydraulics only
+    where the verified baseline has identical model inputs and monthly flow.
+    """
     NETWORK_PATH, NETWORK_LAYER = Path(network_path), network_layer
     MAX_DEPTH_PATH, MAX_DEPTH_LAYER = Path(max_depth_path), max_depth_layer
     PRIORITY_PATH, PRIORITY_LAYER = Path(priority_path), priority_layer
-    CURVES_DIRECTORY, OUTPUT_DIRECTORY = Path(curves_directory), Path(output_directory)
+    CURVES_DIRECTORY = Path(curves_directory)
+    OUTPUT_DIRECTORY = Path(output_directory) if output_directory is not None else None
     start = time.perf_counter()
-    OUTPUT_DIRECTORY.mkdir(parents=True, exist_ok=True)
-    native_dir = OUTPUT_DIRECTORY / "hydraulics"
-    native_dir.mkdir(exist_ok=True)
-    curve_dir = OUTPUT_DIRECTORY / "curves"
-    curve_dir.mkdir(exist_ok=True)
+    native_dir = curve_dir = None
+    if OUTPUT_DIRECTORY is not None:
+        OUTPUT_DIRECTORY.mkdir(parents=True, exist_ok=True)
+        native_dir = OUTPUT_DIRECTORY / "hydraulics"
+        if calculate_hydraulics:
+            native_dir.mkdir(exist_ok=True)
+        curve_dir = OUTPUT_DIRECTORY / "curves"
+        curve_dir.mkdir(exist_ok=True)
     required = ("id", "bankfull_width", "bankfull_depth", "slope", "d84")
     if any(not network_fields.get(key) for key in required) or not max_depth_field:
         raise ValueError("ID, bankfull width, mean/maximum depth, slope, and D84 fields are required")
@@ -158,11 +169,15 @@ def prepare_network(*, network_path, network_layer, max_depth_path, max_depth_la
             table = pd.read_csv(path)
             columns = ["lower", "upper", "suit"] if kind == "substrate" else [kind, "suit"]
             obj[kind] = table[columns].values.tolist()
-            if path.resolve() != (curve_dir / path.name).resolve():
+            if curve_dir is not None and path.resolve() != (curve_dir / path.name).resolve():
                 shutil.copy2(path, curve_dir / path.name)
         curves.append(obj)
-    json_write(OUTPUT_DIRECTORY / "curves.json", curves)
+    if OUTPUT_DIRECTORY is not None:
+        json_write(OUTPUT_DIRECTORY / "curves.json", curves)
     features, fixtures, skipped, above_07, unmatched = [], [], [], [], []
+    baseline = {r["id"]: r for r in (baseline_network or {}).get("features", [])}
+    driver_fields = ("slope", "bfWidth", "bfDepth", "maxDepth", "d84")
+    pending = []
     for i, row in enumerate(rows):
         comid = row[network_fields["id"]]
         def value(key):
@@ -199,7 +214,7 @@ def prepare_network(*, network_path, network_layer, max_depth_path, max_depth_la
             feature["modelStatus"] = "Missing or invalid: " + ", ".join(invalid)
             skipped.append(comid)
             hyd = None
-        else:
+        elif calculate_hydraulics:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 hyd = avg_hydraulics(feature["slope"], feature["bfWidth"], feature["bfDepth"], feature["d84"],
@@ -210,15 +225,37 @@ def prepare_network(*, network_path, network_layer, max_depth_path, max_depth_la
             if hyd.attrs["shape_factor_above_0_7"]:
                 above_07.append(comid)
             # Little-endian float64, columns Q, mean depth, mean velocity, width.
-            np.asarray(hyd[["Q", "di", "Ui", "Wi"]].values.T, dtype="<f8").tofile(native_dir / f"{comid}.bin")
+            if native_dir is not None:
+                np.asarray(hyd[["Q", "di", "Ui", "Wi"]].values.T, dtype="<f8").tofile(native_dir / f"{comid}.bin")
+        else:
+            hyd = None
+            shape = 1.0 - feature["bfDepth"] / maximum
+            feature.update(shapeRaw=shape, shapeUsed=shape, qMin=None, qMax=None, nativeCount=None)
+            if shape > .7:
+                above_07.append(comid)
+        previous = baseline.get(comid)
+        reusable = (not calculate_hydraulics and not invalid and previous is not None
+                    and previous.get("modelStatus") == "ok"
+                    and all(previous.get(k) == feature[k] for k in driver_fields)
+                    and len(previous.get("months", [])) == 12)
+        if reusable:
+            for key in ("shapeRaw", "shapeUsed", "qMin", "qMax", "nativeCount"):
+                feature[key] = previous.get(key)
         for month in range(1, 13):
             q = clean_number(row[monthly_flow_fields[month]])
             q = q * factors["monthly_flow"] if q is not None else None
-            status = ("missing_flow" if q is None or q < 0 else "no_hydraulics" if hyd is None
+            status = ("missing_flow" if q is None or q < 0 else "no_hydraulics" if invalid
+                      else "pending_selection" if hyd is None and q != 0
                       else "zero_flow" if q == 0 else "below_range" if q < feature["qMin"]
                       else "above_bankfull" if q > feature["qMax"] else "ok")
             values = [float(np.interp(q, hyd.Q, hyd[k])) for k in ("di", "Ui", "Wi")] if status == "ok" else [None] * 3
-            feature["months"].append([q, *values, status])
+            if reusable and previous["months"][month - 1][0] == q:
+                feature["months"].append(list(previous["months"][month - 1]))
+            else:
+                feature["months"].append([q, *values, status])
+        if any(row[4] == "pending_selection" for row in feature["months"]):
+            feature["modelStatus"] = "Awaiting segment selection"
+            pending.append(comid)
         features.append(feature)
         if hyd is not None and len(fixtures) < 9:
             tests = []
@@ -239,7 +276,7 @@ def prepare_network(*, network_path, network_layer, max_depth_path, max_depth_la
                                 "s": float(r["s.suit"]), "wua": float(r.WUA)} for j, (_, r) in zip(valid_months, result.iterrows())]
                 tests.append({"curve": curve["id"], "monthly": monthly})
             fixtures.append({"id": comid, "tests": tests})
-        if (i+1) % 150 == 0:
+        if calculate_hydraulics and (i+1) % 150 == 0:
             print(f"Prepared {i+1}/{len(rows)} reaches", flush=True)
     # Store relative source references for files shipped with the application.
     # External inputs remain absolute for unambiguous provenance.
@@ -256,6 +293,7 @@ def prepare_network(*, network_path, network_layer, max_depth_path, max_depth_la
         "priorityLayer": PRIORITY_LAYER, "join": network_fields["id"], "featureCount": len(features),
         "priorityMatches": len(features)-len(unmatched), "unmatchedPriority": unmatched,
         "skippedHydraulics": skipped, "shapeFactorCapped": [], "shapeFactorAbove07": above_07,
+        "pendingHydraulics": pending,
         "shapeMethod": "1 - mean bankfull depth / maximum bankfull depth; no cap",
         "maxDepthSource": MAX_DEPTH_PATH.name, "maxDepthPath": source_display_path(MAX_DEPTH_PATH),
         "maxDepthLayer": MAX_DEPTH_LAYER, "maxDepthField": max_depth_field,
@@ -270,7 +308,10 @@ def prepare_network(*, network_path, network_layer, max_depth_path, max_depth_la
         "defaultPeriods": default_periods or {},
         "periodSummary": "Median of habitat results calculated separately at each selected monthly EROM flow; not habitat at median flow.",
     }
-    json_write(OUTPUT_DIRECTORY / "network.json", {"metadata": metadata, "features": features})
+    network = {"metadata": metadata, "features": features}
+    if OUTPUT_DIRECTORY is None:
+        return network, curves
+    json_write(OUTPUT_DIRECTORY / "network.json", network)
     if reference_path is not None:
         json_write(Path(reference_path), fixtures)
     license_source = ROOT / "LICENSE.txt"
@@ -282,6 +323,7 @@ def prepare_network(*, network_path, network_layer, max_depth_path, max_depth_la
     print(json.dumps({"segments": len(features), "invalid": skipped, "shapeFactorsAbove07": len(above_07), "capped": 0, "priorityMatches": metadata["priorityMatches"],
                       "initialDataMB": round((OUTPUT_DIRECTORY/'network.json').stat().st_size/1e6, 3),
                       "seconds": round(time.perf_counter()-start, 2)}), flush=True)
+    return network, curves
 
 
 if __name__ == "__main__":

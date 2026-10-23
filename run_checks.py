@@ -1,4 +1,4 @@
-"""Check bundled data before app startup, then run the remaining tests in VSCode."""
+"""Check the portable overview, then scientific and on-demand behavior in VSCode."""
 from pathlib import Path
 import subprocess
 import sys

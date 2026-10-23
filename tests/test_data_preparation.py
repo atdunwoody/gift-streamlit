@@ -192,6 +192,8 @@ def test_app_reload_updates_displayed_width_and_sources(configured_inputs, monke
     monkeypatch.setattr(prepare_data, "load_settings", lambda: copy.deepcopy(config))
     at = AppTest.from_file(ROOT / "app.py", default_timeout=30).run()
     assert not at.exception and not at.error
+    at.session_state.selected_id = 10
+    at.run()
     def model_width():
         frame = next(d.value for d in at.dataframe
                      if set(("Input", "Value", "Units")).issubset(d.value.columns))

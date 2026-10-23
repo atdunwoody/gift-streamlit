@@ -13,12 +13,14 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from habitat_engine import (CFS_PER_M3S, MONTHS, STATUS_LABELS, aggregate_period,
-                            compute_monthly, curve_from_csvs, gift_diagnostics, input_source_rows, load_dataset,
+                            calculate_hydraulics, compute_monthly, curve_from_csvs, gift_diagnostics,
+                            hydraulic_parameters, input_source_rows, reach_with_hydraulics,
                             month_range, native_habitat, network_export, selected_comid,
                             selected_plotly_comid)
 from presentation import (COMPARISON_FIELDS, comparison_figure, flow_figure, map_records, map_view,
                           metric_scale, network_map, number, period_label, potential_maximum_note)
-from prepare_data import ensure_prepared_data, load_settings
+from prepare_data import load_settings
+from runtime_data import hydraulic_model_signature, load_runtime_dataset, runtime_signature
 
 settings = load_settings()
 APP_TITLE, ROOT = settings.APP_TITLE, settings.ROOT
@@ -27,16 +29,13 @@ DATA_DIRECTORY = (ROOT / DATA_DIRECTORY).resolve() if not DATA_DIRECTORY.is_abso
 
 
 def data_signature():
-    """Invalidate caches after data or GIFT calculation code changes."""
-    paths = [DATA_DIRECTORY / "network.json", DATA_DIRECTORY / "curves.json", DATA_DIRECTORY / "build-info.json",
-             ROOT / "habitat_engine.py", ROOT / "presentation.py",
-             ROOT / "model/gift_habitat/habitat.py"]
-    return tuple((str(p), p.stat().st_mtime_ns, p.stat().st_size) for p in paths)
+    """Check sources and overview assets without touching native hydraulic files."""
+    return runtime_signature(settings)
 
 
 @st.cache_data(show_spinner=False, max_entries=2)
 def cached_data(signature):
-    return load_dataset(DATA_DIRECTORY)
+    return load_runtime_dataset(settings)
 
 
 @st.cache_data(show_spinner=False, max_entries=12)
@@ -45,23 +44,36 @@ def cached_monthly(curve_json, signature):
     return compute_monthly(network["features"], json.loads(curve_json))
 
 
+@st.cache_data(show_spinner=False, max_entries=256)
+def cached_hydraulics(comid, parameters, model_signature):
+    """One physical solution per segment/input set, independent of life stage."""
+    return calculate_hydraulics(parameters)
+
+
 @st.cache_data(show_spinner=False, max_entries=96)
-def cached_native(comid, curve_json, signature, native_signature, _reach):
-    # The COMID and dataset signature identify the reach. Reuse the supplied
-    # record instead of unpickling the full network on every new selection.
-    return native_habitat(DATA_DIRECTORY, _reach, json.loads(curve_json))
+def cached_native(comid, curve_json, parameters, model_signature, summer_width, _reach):
+    hyd = cached_hydraulics(comid, parameters, model_signature)
+    return native_habitat(DATA_DIRECTORY, _reach, json.loads(curve_json), hydraulics=hyd)
+
+
+@st.cache_data(show_spinner=False, max_entries=256)
+def cached_reach_monthly(comid, curve_json, parameters, model_signature,
+                         flows, summer_width, _reach):
+    hyd = cached_hydraulics(comid, parameters, model_signature)
+    return compute_monthly([reach_with_hydraulics(_reach, hyd)], json.loads(curve_json))
 
 
 @st.cache_data(show_spinner=False, max_entries=24)
 def cached_comparison(curve_json, signature, months, require_all, metric,
-                      comparison, _features, _summary):
+                      comparison, _features, _summary, overview_revision=0):
     """Cache the network points independently of the selected-reach marker."""
     figure, count = comparison_figure(_features, _summary, metric, comparison, None)
     return figure.to_dict(), count
 
 
 @st.cache_data(show_spinner=False, max_entries=12)
-def cached_network_csv(curve_json, signature, months, require_all, _features, _summary, _metadata):
+def cached_network_csv(curve_json, signature, months, require_all, _features, _summary, _metadata,
+                       overview_revision=0):
     return csv_bytes(network_export(_features, _summary, json.loads(curve_json)["id"], list(months), _metadata))
 
 
@@ -258,6 +270,49 @@ def inspector(reach, monthly, summary, months, cfs):
 @st.fragment(key="workspace")
 def workspace(network, curve, monthly, summary, months, cfs, signature):
     features = network["features"]
+    if st.session_state.get("_overview_signature") != signature:
+        st.session_state._overview_signature = signature
+        st.session_state._evaluated_reaches = {}
+    allowed_ids = {r["id"] for r in features}
+    if st.session_state.get("selected_id") not in allowed_ids:
+        st.session_state.selected_id = None
+    selected_id = st.session_state.selected_id
+    curve_json = json.dumps(curve, sort_keys=True)
+    model_signature = hydraulic_model_signature()
+    reach = next((r for r in features if r["id"] == selected_id), None)
+    selected_monthly = selected_summary = None
+    if reach is not None:
+        parameters = hydraulic_parameters(reach)
+        with st.spinner("Calculating the selected segment…"):
+            hyd = cached_hydraulics(selected_id, parameters, model_signature)
+            evaluated = reach_with_hydraulics(reach, hyd)
+            selected_monthly = cached_reach_monthly(
+                selected_id, curve_json, parameters, model_signature,
+                tuple(row[0] for row in reach["months"]), reach.get("summerWidth"), reach)
+        selected_summary = aggregate_period(selected_monthly, months, bool(summary.requireAll.iloc[0])).loc[selected_id]
+        if any(row[4] == "pending_selection" for row in reach["months"]):
+            if selected_id not in st.session_state._evaluated_reaches:
+                st.session_state._evaluated_reaches[selected_id] = evaluated
+        reach = evaluated
+    overrides = st.session_state._evaluated_reaches
+    # Shared comparison/export caches must distinguish which reaches were
+    # evaluated, including two users who have evaluated the same number of IDs.
+    overview_revision = tuple(sorted(overrides))
+    if overrides:
+        features = [overrides.get(r["id"], r) for r in features]
+        updated = [cached_reach_monthly(
+            r["id"], curve_json, hydraulic_parameters(r), model_signature,
+            tuple(row[0] for row in r["months"]), r.get("summerWidth"), r)
+            for r in overrides.values()]
+        monthly = monthly.set_index(["id", "month"]).copy()
+        for frame in updated:
+            replacement = frame.set_index(["id", "month"])
+            monthly.loc[replacement.index, replacement.columns] = replacement
+        monthly = monthly.reset_index()
+        summary = aggregate_period(monthly, months, bool(summary.requireAll.iloc[0]))
+    pending = [r["id"] for r in features if any(row[4] == "pending_selection" for row in r["months"])]
+    network = dict(network, features=features,
+                   metadata=dict(network["metadata"], pendingHydraulics=pending))
     a, b, c = st.columns([3, 1.25, 1])
     layer = a.radio("Network layer", ["GIFT habitat", "Temperature", "Priority"], horizontal=True, key="network_layer")
     metric_labels = {"hsi":"HSI", "wua":"WUA"}
@@ -265,17 +320,14 @@ def workspace(network, curve, monthly, summary, months, cfs, signature):
         st.session_state.map_metric = "hsi"
     metric = b.selectbox("Habitat metric", list(metric_labels), format_func=metric_labels.get, key="map_metric")
     basemap = c.selectbox("Basemap", ["Light", "Dark", "Satellite"], key="basemap")
-    allowed_ids = {r["id"] for r in features}
-    if st.session_state.get("selected_id") not in allowed_ids:
-        st.session_state.selected_id = features[0]["id"]
     if st.session_state.get("view_focus") not in allowed_ids:
         st.session_state.view_focus = None
-    selected_id = st.session_state.selected_id
-    reach = next(r for r in features if r["id"] == selected_id)
-    curve_json = json.dumps(curve, sort_keys=True)
     content = map_content(features, summary, layer, metric,
-                          (signature, curve_json, tuple(months), bool(summary.requireAll.iloc[0]), layer, metric))
+                          (signature, curve_json, tuple(months), bool(summary.requireAll.iloc[0]),
+                           layer, metric, overview_revision))
     st.caption(f"{curve['label']} · {period_label(months)} · {content['valid_count']}/{len(features)} segments with habitat results")
+    if pending:
+        st.info(f"{len(pending)} segments await habitat calculation. Select a segment to calculate it; gray values are unavailable until evaluated.")
     if layer == "Temperature":
         st.info("Temperature scores describe juvenile-salmon suitability under the supplied interpretation of See et al. (2021). They do not change with the selected life stage or month.")
     elif layer == "Priority":
@@ -286,7 +338,7 @@ def workspace(network, curve, monthly, summary, months, cfs, signature):
         if fit_a.button("Fit network", width="stretch"):
             st.session_state.view_focus = None
             st.session_state.view_revision += 1
-        if fit_b.button("Zoom to segment", width="stretch"):
+        if fit_b.button("Zoom to segment", width="stretch", disabled=selected_id is None):
             st.session_state.view_focus = selected_id
             st.session_state.view_revision += 1
         focus = st.session_state.get("view_focus")
@@ -301,12 +353,17 @@ def workspace(network, curve, monthly, summary, months, cfs, signature):
         st.markdown(f'<div class="legend"><span>{content["title"]} &nbsp; 0</span><div style="background:linear-gradient(90deg,{colors})"></div><span>{number(content["high"])}</span></div>', unsafe_allow_html=True)
         st.caption(potential_maximum_note(layer, metric))
         st.caption("Higher values → greater suitability or priority. Gray = unavailable map value. Gold = selected segment. Select a reach on the map or in a comparison plot.")
-    selected_monthly = monthly[monthly.id.eq(selected_id)]
     with right:
-        inspector(reach, selected_monthly, summary.loc[selected_id], months, cfs)
-    diagnostics_panel(reach, selected_monthly, summary.loc[selected_id], months, cfs, curve, network["metadata"])
-    flow_panel(reach, selected_monthly, months, cfs, curve_json, signature)
-    comparison_panel(features, summary, selected_id, curve_json, months, signature)
+        if reach is None:
+            st.info("Select a stream segment or comparison point to calculate its hydraulic and habitat curves.")
+        else:
+            inspector(reach, selected_monthly, selected_summary, months, cfs)
+    if reach is not None:
+        diagnostics_panel(reach, selected_monthly, selected_summary, months, cfs, curve, network["metadata"])
+        flow_panel(reach, selected_monthly, months, cfs, curve_json, signature)
+    comparison_panel(features, summary, selected_id, curve_json, months, signature, overview_revision)
+    network_downloads(network, summary, curve, months, bool(summary.requireAll.iloc[0]), signature,
+                      overview_revision)
 
 
 def diagnostics_panel(reach, monthly, summary, months, cfs, curve, metadata):
@@ -362,9 +419,8 @@ def flow_panel(reach, selected_monthly, months, cfs, curve_json, signature):
     detail = st.session_state.inspect_month
     st.subheader("Habitat response to flow")
     st.caption(f"{reach['name']} (COMID: {selected_id}) · {json.loads(curve_json)['label']}")
-    path = DATA_DIRECTORY / "hydraulics" / f"{selected_id}.bin"
-    native_sig = (path.stat().st_mtime_ns, path.stat().st_size) if path.exists() else None
-    native = cached_native(selected_id, curve_json, signature, native_sig, reach)
+    native = cached_native(selected_id, curve_json, hydraulic_parameters(reach),
+                           hydraulic_model_signature(), reach.get("summerWidth"), reach)
     if native.empty:
         st.info("A flow-response curve is unavailable because this segment has missing hydraulic inputs.")
     wua_tab, hsi_tab = st.tabs(["WUA", "HSI"], key="flow_tabs", on_change="rerun")
@@ -387,7 +443,7 @@ def flow_panel(reach, selected_monthly, months, cfs, curve_json, signature):
 
 
 @st.fragment
-def comparison_panel(features, summary, selected_id, curve_json, months, signature):
+def comparison_panel(features, summary, selected_id, curve_json, months, signature, overview_revision=0):
     st.divider()
     st.subheader("HSI comparisons")
     st.caption("Click a dot to select and locate its reach on the map. Values summarize the selected months; the HSI axis follows the observed maximum.")
@@ -397,7 +453,7 @@ def comparison_panel(features, summary, selected_id, curve_json, months, signatu
         if tab.open:
             with tab:
                 base = cached_comparison(curve_json, signature, tuple(months), bool(summary.requireAll.iloc[0]),
-                                         "hsi", comparison, features, summary)
+                                         "hsi", comparison, features, summary, overview_revision)
                 figure, count = comparison_figure(features, summary, "hsi", comparison, selected_id, base=base)
                 key = f"selection-{st.session_state.selection_revision}-comparison-{comparison}"
                 allowed = frozenset(r["id"] for r in features)
@@ -406,11 +462,11 @@ def comparison_panel(features, summary, selected_id, curve_json, months, signatu
                 st.caption(f"{count} segments with both values. Each point represents one segment; this comparison does not establish causation.")
 
 
-def network_downloads(network, summary, curve, months, require_all, signature):
-    """Network-wide work sits outside the fragment rerun by map selections."""
+def network_downloads(network, summary, curve, months, require_all, signature, overview_revision=0):
+    """Reuse the export until the overview or assessment settings change."""
     features = network["features"]
     export = cached_network_csv(json.dumps(curve, sort_keys=True), signature, tuple(months),
-                                require_all, features, summary, network["metadata"])
+                                require_all, features, summary, network["metadata"], overview_revision)
     st.download_button("Download network period summary (CSV)", export, "gift_network_period_summary.csv", mime="text/csv", on_click="ignore")
     with st.expander("Coverage and input notes"):
         status_counts = summary.status.value_counts().rename_axis("Status").reset_index(name="Segments")
@@ -435,7 +491,9 @@ explicitly configured streams or priority source. Missing values remain unavaila
 
 **Hydraulics and habitat.** Shape factor is
 `1 - mean bankfull depth / maximum bankfull depth`, without capping.
-The original Python GIFT model supplies the native hydraulic levels. Mean depth,
+Selecting a segment runs the original Python GIFT model for that segment and
+caches its hydraulic solution. The map overview uses the bundled monthly
+hydraulics where the source inputs still match. Mean depth,
 velocity, and wetted width are interpolated to each exact monthly flow before
 GIFT evaluates its 121-bin distributions and nearest-coordinate suitability lookup.
 Substrate suitability uses the class containing predicted D84, with inclusive lower
@@ -465,7 +523,9 @@ use the original reach attributes. The Python source and original GIFT model are
 included in the project under GPL-3.0. Custom uploads are held in the user's session;
 derived computations use a bounded server cache. Full app reruns check the source
 files, field mappings, units, curves, and calculation code before using prepared data.
-Changed inputs trigger a complete rebuild and invalidate the derived caches.
+Changed inputs refresh the stream attributes. Segments needing new hydraulics
+are evaluated when selected, and their results are added to the map and export.
+Startup does not rebuild hydraulic curves for the network.
 """)
         curve = st.session_state.get("current_curve")
         if curve:
@@ -510,16 +570,13 @@ def main():
     if st.sidebar.button("Reload input data", help="Reread settings.py and check for changes to source files and field mappings."):
         st.rerun()
     try:
-        with st.spinner("Checking input sources and rebuilding changed data if needed…"):
-            preparation = ensure_prepared_data(settings)
-        signature = data_signature()
-        network, curves = cached_data(signature)
+        with st.spinner("Loading stream network…"):
+            signature = data_signature()
+            network, curves = cached_data(signature)
     except (OSError, ValueError, sqlite3.Error, KeyError) as exc:
-        st.error(f"Input data could not be prepared: {exc}")
+        st.error(f"Input data could not be loaded: {exc}")
         st.info("Check the paths, layers, fields, and units in settings.py, then reload the app.")
         st.stop()
-    if preparation["rebuilt"]:
-        st.success("Prepared data was rebuilt from the configured input files and fields.")
     st.session_state.setdefault("view_revision", 0)
     st.session_state.setdefault("selection_revision", 0)
     curve, months, require_all, cfs = sidebar(curves)
@@ -528,7 +585,6 @@ def main():
         monthly = cached_monthly(json.dumps(curve, sort_keys=True), signature)
         summary = aggregate_period(monthly, months, require_all)
     workspace(network, curve, monthly, summary, months, cfs, signature)
-    network_downloads(network, summary, curve, months, require_all, signature)
     methods(network)
 
 

@@ -1,6 +1,6 @@
 # Validation record
 
-Verified 2026-10-22. Run `run_checks.py` directly in VSCode to repeat the suite.
+Updated 2026-10-23. Run `run_checks.py` directly in VSCode to repeat the suite.
 Install `pytest` for development checks; normal app use does not require it.
 
 ## Current input verification
@@ -10,12 +10,13 @@ Install `pytest` for development checks; normal app use does not require it.
 - Temperature (`currTempScoreKSee`), priority (`High priority combined`), and
   category (`FinalScore_cat`) come from the supplied Provisional Model Layer
   GeoPackage, copied unchanged to `inputs/Provisional_Model_Layer.gpkg`.
-  Its `UGR` layer has 728 unique COMIDs. All stream COMIDs match, with no null
+  Its `provisional_model_layer` layer has 728 unique COMIDs. All stream COMIDs match, with no null
   temperature or priority scores.
 - Pyles Creek, COMID 23429054: bankfull width is 4.911802553596989 m and mean
   bankfull depth is 0.24333286885422614 m. The previous prepared files held
   4.534552403349192 m and 0.258162206878533 m, respectively.
-- Prepared native hydraulics were rebuilt for all 727 supported reaches.
+- The monthly overview contains all 727 supported reaches. Selected native
+  hydraulics are calculated on demand; native `.bin` files are not required.
   COMID 23429096 remains unavailable because its bankfull geometry is missing.
 - July-September rearing coverage is 696/728 complete reaches. March-June
   steelhead-spawning coverage is 407/728. Current geometry produces 166 shape
@@ -25,8 +26,9 @@ Install `pytest` for development checks; normal app use does not require it.
 
 The suite verifies numerical agreement with the original R GIFT calculations,
 source joins, configurable fields and units, rebuild behavior, exports, and
-Streamlit controls. **75 tests passed** using `python run_checks.py`: two
-prepared-data portability tests ran first, followed by 73 remaining tests.
+Streamlit controls. **82 tests passed** through `python run_checks.py` in the
+extracted release package, with no native hydraulic files present: two overview
+portability tests ran first, followed by 80 remaining tests.
 
 The frozen R references use revision
 `40c4a74f82d842cd2ab8ab4c53e2b985ac4e0030`, R 4.2.2, dplyr 1.0.10,
@@ -44,14 +46,20 @@ hashes remain in `tests/r_reference` and were not regenerated in this revision.
   custom layers and join keys, alternate width columns, feet, percent slope,
   D84 in meters, and monthly flows in cfs.
 - Source path/content, layer, field, units, curve, and period changes trigger
-  complete rebuilds. Unchanged inputs reuse prepared data. Missing/corrupt
-  native curves are rebuilt; removed reaches leave no obsolete native file.
+  complete rebuilds in the explicit offline preparation tool. The interactive
+  app refreshes inputs without solving network hydraulics; changed reaches are
+  calculated on selection. Missing/corrupt native files do not affect startup.
 - Missing paths, misspelled columns, and duplicate join IDs raise errors.
-  Failed preparation preserves the previous complete files, while the app
-  stops and does not render them as current data.
+  Failed offline preparation preserves the previous complete files. An invalid
+  live configuration stops the app instead of showing stale source values.
 - AppTest verifies life-stage/month controls, selections in all four comparison
   plots, map/inspector synchronization, missing-input diagnostics, cache reuse,
   lazy plot rendering, and reloading a changed width mapping.
+- On-demand checks assert zero startup hydraulic solves, one solve for each new
+  selected reach, and reuse across repeat selections, life stages, months, and
+  units. Startup is also checked with missing/corrupt overview files and without
+  native files. Changed-source results update the map on selection. Separate
+  AppTest sessions retain their own evaluated-reach comparisons.
 
 Browser rendering, external basemap availability, deployment, and concurrent
 users were not independently tested for this revision. Historical timings in
@@ -60,17 +68,26 @@ README.md do not describe a new performance measurement.
 ## Deployment fixes
 
 - Text-file LF line endings are enforced by `.gitattributes`; the normalized
-  model sources and regenerated prepared outputs are included in the update.
+  model sources and prepared monthly overview are included in the update.
 - Direct application dependencies are pinned to the tested versions below.
   Local Conda setup is in `dev/environment.yml`; Cloud uses `requirements.txt`.
-- `run_checks.py` tests bundled-data validity before app tests can rebuild it.
+- `run_checks.py` tests overview validity without native files before app tests.
 - Docker startup uses the host's `PORT`, with 8501 as the default.
-- On the Linux verification host, fresh Git clones with `core.autocrlf=false`
-  and `core.autocrlf=true` both passed the two portability tests without a
-  rebuild. This checks Git conversion behavior; it is not a Windows OS test.
-- Model source changes are limited to line endings. Scientific reference tests
-  passed for the regenerated Linux outputs within the existing tolerances.
+- The GIFT model equations are unchanged. Selected hydraulic curves and monthly
+  interpolation use the existing implementation and scientific tolerances.
 - The Docker image was not built, and local Conda creation was not tested here.
+
+## Local startup measurement
+
+With dependencies already installed, a fresh Python process initialized the
+AppTest backend in 2.068 seconds, including imports. The app script itself took
+1.382 seconds and performed zero hydraulic solves. Selecting two different
+reaches took 0.310 and 0.302 seconds per backend update and performed one solve
+for each. Returning to the first reach took 0.231 seconds without another solve;
+changing the life stage also reused the cached physical solution.
+
+These local measurements exclude browser rendering, hosting builds, internet
+latency, and concurrent users. They are not a hosted startup-time guarantee.
 
 ## Tested Python versions
 

@@ -18,13 +18,12 @@ from habitat_engine import (aggregate_period, compute_monthly, curve_from_csvs,
                             network_export, selected_comid, selected_plotly_comid, validate_curves)
 from presentation import (COMPARISON_FIELDS, comparison_figure, flow_figure, map_records,
                           map_view, metric_scale, network_map, potential_maximum_note, rgb)
-from prepare_data import ensure_prepared_data, load_settings
+from prepare_data import load_settings
 from tools.prepare_network import quote
 
 
 @pytest.fixture(scope="module")
 def data():
-    ensure_prepared_data()
     return load_dataset(ROOT / "data")
 
 

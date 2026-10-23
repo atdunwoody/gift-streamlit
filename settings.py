@@ -1,7 +1,8 @@
 """Edit input sources, fields, and units here, then launch or rerun the app.
 
-The app rebuilds prepared data when these settings or source files change.
-prepare_data.py can also be run directly in VSCode for an explicit rebuild.
+The app refreshes changed inputs without building every hydraulic curve.
+Changed reaches are calculated when selected. Run prepare_data.py directly in
+VSCode to refresh the complete monthly overview before publishing input changes.
 """
 from pathlib import Path
 

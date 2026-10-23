@@ -17,7 +17,7 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "model"))
-from gift_habitat import habitat
+from gift_habitat import avg_hydraulics, habitat
 from tools.habitat_results import month_range
 
 MONTHS = tuple(calendar.month_name[1:])
@@ -28,6 +28,7 @@ STATUS_LABELS = {
     "zero_flow": "Zero flow; HSI and WUA are zero",
     "missing_flow": "Monthly EROM flow unavailable",
     "no_hydraulics": "Hydraulic predictions unavailable",
+    "pending_selection": "Select this segment to calculate habitat",
     "below_range": "Flow below modeled minimum",
     "above_bankfull": "Flow exceeds modeled bankfull discharge",
     "substrate_unclassified": "D84 outside supplied substrate classes",
@@ -166,16 +167,54 @@ def aggregate_period(monthly: pd.DataFrame, months, require_all=True):
     return summary
 
 
-def native_habitat(directory: Path, reach, curve):
-    """Read one segment's 981 native levels and evaluate its flow response."""
-    path = directory / "hydraulics" / f"{int(reach['id'])}.bin"
-    if not path.exists():
+HYDRAULIC_FIELDS = ("slope", "bfWidth", "bfDepth", "maxDepth", "d84")
+
+
+def hydraulic_parameters(reach):
+    return tuple(reach.get(key) for key in HYDRAULIC_FIELDS)
+
+
+def calculate_hydraulics(parameters):
+    """Solve one reach only. The caller owns the bounded Streamlit cache."""
+    if any(value is None or not np.isfinite(value) or value <= 0 for value in parameters):
         return pd.DataFrame()
-    raw = np.fromfile(path, dtype="<f8")
-    if raw.size != 4 * reach["nativeCount"]:
-        raise ValueError(f"Invalid native hydraulic file for COMID {reach['id']}")
-    raw = raw.reshape(4, -1).T
-    hyd = pd.DataFrame(raw, columns=["Q", "di", "Ui", "Wi"])
+    slope, width, depth, maximum, d84 = parameters
+    if maximum < depth:
+        raise ValueError("Maximum bankfull depth is below mean bankfull depth")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        return avg_hydraulics(slope, width, depth, d84,
+                              max_bankfull_depth=maximum, full_curve=True)
+
+
+def reach_with_hydraulics(reach, hyd):
+    """Interpolate the clicked reach's twelve flows without changing its inputs."""
+    result = dict(reach, months=[])
+    supported = not hyd.empty
+    if supported:
+        result.update(modelStatus="ok", shapeRaw=hyd.attrs["shape_factor_raw"],
+                      shapeUsed=hyd.attrs["shape_factor"], qMin=float(hyd.Q.min()),
+                      qMax=float(hyd.Q.max()), nativeCount=len(hyd))
+    for record in reach["months"]:
+        q = record[0]
+        status = ("missing_flow" if q is None or not np.isfinite(q) or q < 0
+                  else "no_hydraulics" if not supported else "zero_flow" if q == 0
+                  else "below_range" if q < result["qMin"]
+                  else "above_bankfull" if q > result["qMax"] else "ok")
+        values = [float(np.interp(q, hyd.Q, hyd[k])) for k in ("di", "Ui", "Wi")] if status == "ok" else [None] * 3
+        result["months"].append([q, *values, status])
+    return result
+
+
+def native_habitat(directory: Path, reach, curve, *, hydraulics=None):
+    """Calculate the selected reach's response; directory is retained for callers.
+
+    No native hydraulic files are read. Supplying hydraulics reuses the cached
+    physical solution across life stages, month ranges, and display units.
+    """
+    hyd = calculate_hydraulics(hydraulic_parameters(reach)) if hydraulics is None else hydraulics.copy()
+    if hyd.empty:
+        return pd.DataFrame()
     hyd["Ai"] = hyd.di * hyd.Wi
     evaluated = habitat(hyd, pd.DataFrame(curve["depth"], columns=["depth", "suit"]),
                         pd.DataFrame(curve["velocity"], columns=["velocity", "suit"]))

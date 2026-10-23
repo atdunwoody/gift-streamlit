@@ -1,7 +1,7 @@
 # GIFT Habitat Explorer: Streamlit
 
 A Python Streamlit application for the Upper Grande Ronde stream network.
-The app includes the input data, prepared hydraulics, original GIFT Python model,
+The app includes the input data, prepared monthly overview, original GIFT Python model,
 and all source needed to run or modify it. No ChatGPT account or connection is
 needed by the running app.
 
@@ -34,10 +34,12 @@ needed by the running app.
    launcher uses that interpreter, starts Streamlit, and opens
    **http://localhost:8501**. Stop the terminal with **Ctrl+C**.
 
-The prepared dataset is included. Repository-relative paths are recorded in the
-prepared-data manifest, so extracting, moving, or deploying the same project does
-not trigger recomputation. The app still verifies the configured files and fields,
-and rebuilds if source contents, settings, model code, or prepared outputs change.
+The prepared monthly overview is included. Startup loads it and displays the map
+without computing any native hydraulic curves. Select a stream segment or a
+comparison point to calculate that segment's hydraulic and habitat flow-response
+curves. A bounded server cache reuses the physical solution across repeat clicks,
+life stages, assessment months, and display units. Old `data/hydraulics/*.bin`
+files are not needed by the app and are omitted from this package.
 Run the launcher rather than running `app.py` as a plain Python script. If needed, the
 equivalent terminal command is `python -m streamlit run app.py`.
 
@@ -67,9 +69,9 @@ the pinned `requirements.txt`.
 - Build only the visible WUA/HSI and comparison plots. Each plot panel has its
   own fragment, so switching plot tabs does not redraw the map.
 - Cache the network comparison points independently of the selected marker.
-  Reuse the selected reach's record when evaluating its native flow curve.
-- Prepare the network download outside the map-selection fragment; load the
-  monthly-results table and its downloads only when that expander is opened.
+  Reuse the selected reach's cached physical solution when evaluating habitat.
+- Cache the network export until its overview or assessment settings change;
+  load the monthly-results table and its downloads when that expander is opened.
 - Use 5-pixel selectable stream lines with rounded ends and a 6-pixel gold
   selection. This replaces 3-pixel lines and an ineffective `pickingRadius`
   entry in the WebGL parameters.
@@ -78,8 +80,8 @@ the pinned `requirements.txt`.
   and the ordering of months across December are preserved.
 
 Reach clicks still require a round trip to the Streamlit server. The first
-selection of a reach with a new suitability curve also evaluates its native
-flow-response curve; repeat selections use the bounded calculation cache.
+selection solves that reach's native hydraulics. New suitability curves reuse
+the cached hydraulics and evaluate habitat; repeat selections reuse both caches.
 
 ## Features
 
@@ -160,8 +162,8 @@ set the months appropriate to the uploaded curves.
   observations. Represented alterations and gage corrections are included;
   diversions are incompletely accounted for.
 - Shape factor is `1 - mean bankfull depth / joined maximum depth`, without
-  capping. All 166 factors above 0.7 in the current inputs are retained. Prepared hydraulics have been
-  rebuilt with these factors. Factors must be in [0, 1).
+  capping. All 166 factors above 0.7 in the current inputs are retained in the
+  overview and selected-segment calculations. Factors must be in [0, 1).
 - Original GIFT equations and 121-bin distribution calculations are retained
   in `model/gift_habitat`. Suitability uses nearest curve coordinates, not
   linear interpolation of suitability. Hydraulics are interpolated to exact
@@ -238,13 +240,16 @@ Required columns must exist, while null row values are retained as unavailable.
 After edits, select **Reload input data** in the sidebar or restart the app.
 Every full app rerun reads current settings and checks the source paths, layers,
 field mappings, units, file contents, curve CSVs, and calculation code against
-`data/build-info.json`. Changed inputs or missing/corrupt prepared files trigger
-a complete rebuild of network attributes, monthly hydraulics, native hydraulic
-curves, and suitability definitions. Unchanged files reuse prepared data.
+`data/build-info.json`. When inputs change, the app refreshes the stream attributes
+without solving hydraulics for every reach. Existing monthly values are reused
+only where the physical inputs and monthly flow still match the verified overview.
+Changed reaches are gray until selected; selecting one calculates its results
+and updates the overview and network export for the current session. If the
+overview is absent or corrupt, the app can still display the input network and
+calculate reaches on selection. It does not write rebuilt data during startup.
 An invalid configuration stops the app with a useful error instead of showing
 results from an old source.
 
-The rebuild is prepared separately and published only after it succeeds.
 Input hashes are recorded by source role and repository-relative path for bundled
 inputs (or absolute path for external files). Each source is additionally checked
 by SHA-256, so similarly named but different sources cannot silently reuse a
@@ -253,17 +258,21 @@ prepared dataset. The app's
 actual selected files and columns. **Model input values** shows the selected
 reach's bankfull width, mean/maximum depth, slope, and D84 in SI units.
 
-To force a rebuild independently, run **prepare_data.py** directly in VSCode.
+To refresh the complete monthly overview before publishing changed inputs,
+run **prepare_data.py** directly in VSCode. This is an explicit offline operation.
+It also creates native `.bin` files for validation or other uses; the webapp
+calculates selected curves directly and does not need those files.
 Running `tools/prepare_network.py` also delegates to the same settings.
 
 During interaction, Streamlit reads the prepared data and calculates habitat
 in Python. `habitat_engine.py` holds calculations and exports; `presentation.py`
 builds the PyDeck map and Plotly figures; `app.py` manages controls and session
-state; `prepare_data.py` checks provenance and manages complete rebuilds.
+state; `runtime_data.py` loads the overview or refreshes inputs without bulk
+hydraulic calculations. `prepare_data.py` manages explicit offline rebuilds.
 
 Keep the `static/` folder and `.streamlit/config.toml`: they enable the app's
-small satellite basemap style file. Large hydraulic files are read by Python
-and are not served through this static-file route.
+small satellite basemap style file. Selected hydraulic curves are calculated
+in memory and are not served through this static-file route.
 
 ## Publish a shareable site
 
@@ -297,23 +306,33 @@ dedicated resources.
 
 ## Performance and validation
 
-Prepared hydraulics avoid rerunning the geometry model during interaction.
-The bundled `data/network.json`, `data/curves.json`, and 727 native hydraulic
-response files are reused on first startup when source hashes match. A full
-hydraulic rebuild is required only if the underlying inputs, configured fields,
-model preparation code, or output files change. Moving the repository does not
-invalidate the prepared dataset. The manifest is portable across Windows and Linux.
+The bundled `data/network.json` and `data/curves.json` provide the monthly map
+overview. Startup verifies these small overview files and the configured sources;
+it does not read, validate, or rebuild the 727 native hydraulic files. No segment
+is selected automatically. Selecting a segment computes its 981 native hydraulic
+levels, then evaluates its monthly results and habitat response.
+
+Physical solutions use a bounded 256-entry cache keyed by segment, hydraulic
+inputs, and calculation code. Habitat response curves and selected monthly
+results have their own bounded caches. Changing a life stage, assessment period,
+or display units reuses the physical solution. Changing physical inputs invalidates
+that segment's solution. Caches are cleared when the server restarts and can
+evict old entries when their limits are reached.
+
+Moving the repository does not invalidate the prepared overview. The manifest
+is portable across Windows and Linux.
 Text assets use LF line endings, enforced by `.gitattributes`, so a Git checkout
 does not invalidate the prepared data through line-ending conversion alone.
 When changing inputs or model preparation code, run `prepare_data.py` in VSCode
-and commit the complete updated `data/` folder before deploying.
+and commit the updated overview files before deploying. The app does not require
+the offline-generated `data/hydraulics/` folder.
 
 The app caches the dataset, full-network monthly habitat by curve set, and
 native response curves for recently selected segments. The main map/inspector/
 plot workspace is a Streamlit fragment, so its interactions can rerun without
 rebuilding the sidebar. Panning and zooming use the browser's WebGL map.
 
-In the previous map-performance revision, six selection events replayed through
+In an earlier map-performance revision, six selection events replayed through
 a running local Streamlit server showed that
 the median fragment-update time decreased from **970.5 ms to 460.2 ms** in the
 same development environment. Each run selected three reaches for the first
@@ -323,7 +342,7 @@ two visible plots are built on each selection, compared with four previously.
 These timings include the local server and WebSocket response but exclude
 browser/GPU rendering, basemap tile requests, internet latency, and concurrent
 users. They are not a guarantee of hosted response time. The first selection
-with a new curve still evaluates that reach's native flow-response curve.
+with a new curve evaluates that reach's habitat response using cached hydraulics.
 
 Tests use frozen results generated by the original R GIFT functions, including
 19 hydraulic cases, factors above 0.7, 1,728 habitat evaluations across all six
@@ -339,8 +358,8 @@ transitions, comparison selections, and diagnostic inputs for unavailable result
 
 To run development checks, install `pytest` in this environment and run
 **run_checks.py** in VSCode. The equivalent terminal command is
-`python run_checks.py`. This checks the bundled-data manifest before any app test
-can rebuild it, then runs the remaining tests. Run it from a fresh checkout when
+`python run_checks.py`. This checks the bundled overview without native files,
+then runs the scientific, app-state, and on-demand calculation tests. Run it from a fresh checkout when
 validating a release. Tested library versions and verification limits are
 recorded in `VALIDATION.md`. Production and local package versions are pinned in
 `requirements.txt` and `dev/environment.yml`; transitive dependencies are still

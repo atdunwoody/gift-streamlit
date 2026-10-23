@@ -4,3 +4,4 @@ __pycache__
 .git
 .streamlit/secrets.toml
 exports
+data/hydraulics

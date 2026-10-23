@@ -1,44 +1,54 @@
-# Apply the deployment changes
+# On-demand hydraulic curves
 
-This archive contains new or changed files relative to gift-streamlit(1).zip.
-It is an update for the existing repository, not a standalone application.
+This is the complete updated application, including the earlier deployment fixes.
+The input data and monthly map overview are included. Detailed curves are
+calculated for the selected segment and cached in the running server.
 
-1. Stop the local Streamlit server.
-2. Extract this archive into the repository folder containing `app.py`, retaining
-   its folder structure. Merge the folders and overwrite matching files when
-   prompted, including those in `data/` and `model/`. Keep existing files that
-   are absent from this archive.
-3. **Delete the old `environment.yml` from the repository root.** Its replacement
-   is `dev/environment.yml`. ZIP extraction cannot remove the old file for you.
-4. In the Python 3.12 environment used by VSCode, run
-   `python -m pip install -r requirements.txt`.
-5. For verification, install `pytest` if needed, then open `run_checks.py` in
-   VSCode and choose **Run Python File in Terminal**. Check before starting the
-   app so an automatic rebuild cannot conceal a stale prepared-data manifest.
-6. Commit and push all changed and new files, including the root-file deletion,
-   `.gitattributes`, normalized model source files, and prepared data. Inspect the
-   changes in GitHub Desktop before committing.
-7. In Streamlit Community Cloud, deploy `app.py` and select Python 3.12 in
-   Advanced settings. The root `requirements.txt` supplies the pinned packages.
+## Install or update
 
-For a new local environment, run `conda env create -f dev/environment.yml`, then
-activate `gift_streamlit`. To launch locally, run `run_streamlit.py` in VSCode.
+1. Extract the complete `gift-streamlit` folder and open it in VSCode.
+2. When copying into an existing repository, overwrite matching application
+   files and remove the old root `environment.yml`. The local Conda file is now
+   `dev/environment.yml`. The old `data/hydraulics/` folder can also be removed;
+   the webapp does not read or validate those native files.
+3. In the existing Python 3.12 environment, install `requirements.txt`, then
+   launch `run_streamlit.py` directly in VSCode. For a new environment, run
+   `conda env create -f dev/environment.yml` and activate `gift_streamlit`.
+4. Commit and push the updated source, overview files, and any legacy-file
+   deletions. In Streamlit Community Cloud, use `app.py` as the entrypoint and
+   Python 3.12 in Advanced settings.
 
-## Included fixes
+No preparation run is needed for the supplied inputs. `prepare_data.py` remains
+an explicit offline option to refresh the complete monthly overview after input
+changes. Running it also produces optional native files that the webapp ignores.
 
-- LF line endings for text assets on Windows and Linux, with binary protection
-  for GeoPackages and native hydraulics.
-- Prepared data regenerated against the normalized source files.
-- Pinned versions of the seven direct application dependencies.
-- Local Conda configuration moved into `dev/`, leaving `requirements.txt` as the
-  root deployment dependency file.
-- Docker startup honors the host's `PORT`, defaulting to 8501.
-- `run_checks.py` tests the prepared-data manifest before starting app tests.
-- Updated installation, deployment, and verification instructions.
+## Startup and selection behavior
 
-The changed prepared files include numerical differences from regenerating on
-Linux. The scientific reference suite checks their agreement within its existing
-tolerances. Input data and model equations were not changed by this update.
+- Startup performs zero hydraulic curve solves and does not select a segment.
+- The map retains the prepared monthly overview for matching source inputs.
+- Clicking a segment or comparison point calculates that segment's hydraulic
+  curve and evaluates its monthly habitat results and flow-response plots.
+- Repeat clicks reuse cached hydraulics. Changing the life stage, months, or
+  display units also reuses the physical solution.
+- Physical cache entries are keyed by segment, hydraulic inputs, and calculation
+  code. The physical cache holds at most 256 entries; habitat caches are also
+  bounded. Server restarts clear these caches, and old entries can be evicted.
+- Changed inputs are read without a network hydraulic rebuild. Reaches without
+  matching overview values are gray until selected. Their calculated results
+  update the map, comparisons, and network export for that user's session.
+- Missing or corrupt overview files also leave hydraulics deferred to selection.
+  Invalid source paths, layers, or required fields produce an input error.
+- The original GIFT equations, uncapped shape factor, flow-range rules, and
+  scientific reference tolerances are retained.
 
-The Docker image was not built here. Live hosting, browser rendering, and
-concurrent-user behavior require verification on the selected host.
+## Check the update
+
+Install `pytest` for development checks, then run `run_checks.py` in VSCode.
+The suite verifies zero startup solves, one solve for each newly selected reach,
+cache reuse, changed inputs, overview updates, missing native files, and R-derived
+scientific references. `VALIDATION.md` records the completed verification.
+
+The first hosting build can still spend time installing Python dependencies.
+This change removes bulk hydraulic work from application startup; it does not
+control the hosting platform's build queue, package downloads, or instance startup.
+The Docker image and concurrent browser users were not tested here.

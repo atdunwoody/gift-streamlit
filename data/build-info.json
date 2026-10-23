@@ -204,12 +204,12 @@
   ],
   "calculationCodeSHA256": {
     "prepare_data.py": "b4b8346849d2f5131ba45dead75a7827421af432a5eafef9efec5b62e7e4141c",
-    "tools/prepare_network.py": "b0a0a5650c3e2f955fe8553c6f8f3bb774a7b42b79aed92f7f820341a6d4923a",
+    "tools/prepare_network.py": "8c68b53912e89da4252c9f056ccd81687dd9327cf27ef1a5a109b0444f205d4e",
     "model/gift_habitat/hydraulics.py": "f6a0875ddf2689b8effae29e9afc31b90f4dbb17840a26e4452c80cb5d9f2e41",
     "model/gift_habitat/habitat.py": "36b992c28fa127bde0f450336d1c3a11a75226aa590721b2937b50adc80cecfe",
     "model/gift_habitat/_validation.py": "87cf868780ce20befcfeccb449ae08e915bfc4ade3f1e5dd70942c7bf1118e80"
   },
-  "fingerprint": "3409c54d16b9031e2c2f8e7fb2e7fd2477239dd7efa45800a54975961c1d62ab",
+  "fingerprint": "a6f7e15fef1488b7f9f136523e87f4afcc88f543a577ae8c6062920055c8dc82",
   "outputs": {
     "curves/chinook_juvenile_rearing_depth.csv": "d9142eea7e8d498ae0452701d8eed4165535d79088669d130249551faebe8ea4",
     "curves/chinook_juvenile_rearing_substrate.csv": "7618e29ee1dc054ab494a22617ba4f376825d5ca5e17e0709aaa53ae4d2816b8",
@@ -957,9 +957,9 @@
     "hydraulics/23431100.bin": "ffe0303cd83233cea5edef9e34fca7bc1f992d43128d7a95030170f3b12bda09",
     "hydraulics/947060053.bin": "68aa2941b8c908f6e4034bd14e246d1060b3ec23aeee3d3ca63fbce74298c2bc",
     "hydraulics/947060054.bin": "80a85233af9d0439a60bcfd5efcee99b9a362a0eb5d6207e52e15712d2abe554",
-    "network.json": "34c2ed83cbfbfa09f35ebe72a10b6670be3df60710ba34de5e0bf5870c204d37"
+    "network.json": "c8d4ffd31499fa7a65c209f68796626b2b08b05fe2b4817ff8ae8d1959bdfec5"
   },
-  "builtAt": "2026-10-23T00:01:33.219276+00:00",
+  "builtAt": "2026-10-23T15:59:07.962820+00:00",
   "aggregation": "Median of separately evaluated monthly habitat results.",
   "requireAllMonthsDefault": true
 }

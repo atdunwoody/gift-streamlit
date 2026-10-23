@@ -42,6 +42,8 @@ def send_plot_selection(at, comparison, comid):
 def test_default_and_life_stage_controls():
     at = AppTest.from_file(ROOT/"app.py",default_timeout=30).run()
     assert not at.exception
+    assert at.session_state.selected_id is None
+    send_map_selection(at, 23428378)
     assert at.radio(key="flow_units").value == "cfs"
     assert any("Potential maximum: 1" in item.value for item in at.caption)
     assert at.selectbox(key="start_month").value == 7
@@ -127,6 +129,8 @@ def test_map_selection_reuses_network_records_and_updates_results(monkeypatch):
 def test_only_open_plot_tabs_and_result_table_are_rendered():
     at = AppTest.from_file(ROOT / "app.py", default_timeout=30).run()
     assert not at.exception
+    assert not any(p.proto.id.endswith("-flow-wua") for p in at.get("plotly_chart"))
+    send_map_selection(at, 23428378)
     keys = [p.proto.id for p in at.get("plotly_chart")]
     assert any(k.endswith("-flow-wua") for k in keys)
     assert not any(k.endswith("-flow-hsi") for k in keys)
