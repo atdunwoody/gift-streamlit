@@ -200,7 +200,7 @@ def test_app_reload_updates_displayed_width_and_sources(configured_inputs, monke
         return frame.set_index("Input").loc["Bankfull width", "Value"]
     assert model_width() == pytest.approx(8.)
     config.NETWORK_FIELDS["bankfull_width"] = "alternative_width_ft"
-    next(b for b in at.button if b.label == "Reload input data").click().run()
+    at.run()  # Full reruns automatically check settings and source files.
     assert not at.exception and not at.error
     assert model_width() == pytest.approx(12.)
     sources = next(d.value for d in at.dataframe if "Source file" in d.value.columns)
@@ -208,7 +208,7 @@ def test_app_reload_updates_displayed_width_and_sources(configured_inputs, monke
     assert sources.set_index("Input").loc["Temperature score", "Source file"] == str(config.PRIORITY_PATH)
     # A bad path must stop the app instead of rendering the previous map/inputs.
     config.NETWORK_PATH = config.NETWORK_PATH.with_name("does_not_exist.gpkg")
-    next(b for b in at.button if b.label == "Reload input data").click().run()
+    at.run()  # Full reruns automatically check settings and source files.
     assert not at.exception
     assert any("does_not_exist.gpkg" in e.value for e in at.error)
     assert not at.get("deck_gl_json_chart")

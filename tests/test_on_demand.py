@@ -91,7 +91,7 @@ def test_changed_reach_updates_map_and_inputs_without_bulk_build(configured_inpu
     assert next(row for row in streams if row["comid"] == 10)["value"] != "Unavailable"
     assert next(row for row in streams if row["comid"] == 20)["value"] == "Unavailable"
     config.NETWORK_FIELDS["bankfull_width"] = "alternative_width_ft"
-    next(button for button in at.button if button.label == "Reload input data").click().run()
+    at.run()  # Full reruns automatically verify source files and field mappings.
     assert not at.exception and len(counted_solves) == 2
     assert at.session_state._evaluated_reaches[10]["bfWidth"] == pytest.approx(12.)
     assert not config.DATA_DIRECTORY.exists()

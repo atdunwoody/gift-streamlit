@@ -142,7 +142,12 @@ def test_mean_map_toggle_is_off_by_default_and_ignores_selected_months(small_net
     before = at.get("deck_gl_json_chart")[0].proto.json
     assert "modeled flows" in before
     assert any("201 equally spaced" in c.value for c in at.caption)
-    at.selectbox(key="start_month").set_value(1).run()
+    assert at.selectbox(key="start_month").disabled
+    assert at.selectbox(key="end_month").disabled
+    assert at.radio(key="period_mode").disabled
+    # Programmatic changes to inactive dates must not alter the mean map.
+    at.session_state.start_month = 1
+    at.run()
     assert not at.exception
     assert at.get("deck_gl_json_chart")[0].proto.json == before
     assert len(counted_solves) == 2
@@ -156,11 +161,10 @@ def test_mean_map_toggle_is_off_by_default_and_ignores_selected_months(small_net
 def test_plot_override_survives_global_regression_change(small_network, counted_solves):
     at = AppTest.from_file(ROOT / "app.py", default_timeout=30).run()
     send_map_selection(at, 23428544)
-    at.toggle(key="plot-23428544-override_width").set_value(True).run()
     at.number_input(key="plot-23428544-custom_width").set_value(30.).run()
     at.selectbox(key="network_depth_source").set_value(BIEGER_NATIONAL).run()
     assert not at.exception and not at.error
-    assert at.toggle(key="plot-23428544-override_width").value
+    assert at.session_state._plot_choices[23428544]["override_width"]
     assert at.number_input(key="plot-23428544-custom_width").value == 30.
     assert any(m.label == "Plot bankfull width (m)" and m.value == "30.000" for m in at.metric)
     assert at.selectbox(key="network_width_source").value == CHAMP
@@ -193,6 +197,6 @@ def test_outside_bankfull_diagnostics_collapsed_and_layer_labels(small_network):
     assert not diagnostics.proto.expanded
     assert at.radio(key="network_layer").options == ["GIFT habitat", "Temperature Suitability", "Provisional Priority"]
     at.radio(key="network_layer").set_value("Provisional Priority").run()
-    assert any(c.value == "Provisional Model stream segment restoration priority" for c in at.caption)
+    assert any(c.value == "Provisional Model stream segment restoration priority" for c in at.info)
     at.radio(key="network_layer").set_value("Temperature Suitability").run()
     assert any("NoRWeST mean August stream temperature" in i.value for i in at.info)

@@ -23,7 +23,7 @@ from habitat_engine import (CFS_PER_M3S, MONTHS, STATUS_LABELS, aggregate_period
 from presentation import (COMPARISON_FIELDS, channel_geometry_figure, comparison_figure,
                           flow_figure, legend_gradient, map_records, map_view, metric_scale,
                           network_map, number, period_label, potential_maximum_note, suitability_figure)
-from network_scenarios import build_network_solution, full_curve_summary
+from network_scenarios import build_network_solution, full_curve_mean, full_curve_summary
 from prepare_data import load_settings
 from runtime_data import hydraulic_model_signature, load_runtime_dataset, runtime_signature
 
@@ -81,6 +81,13 @@ def cached_hydraulics(comid, parameters, model_signature):
 def cached_native(comid, curve_json, parameters, model_signature, summer_width, _reach):
     hyd = cached_hydraulics(comid, parameters, model_signature)
     return native_habitat(DATA_DIRECTORY, _reach, json.loads(curve_json), hydraulics=hyd)
+
+
+@st.cache_data(show_spinner=False, max_entries=96)
+def cached_plot_mean(comid, curve_json, parameters, model_signature, summer_width, _reach):
+    hyd = cached_hydraulics(comid, parameters, model_signature)
+    physical = None if hyd.empty else hyd[["Q", "Ai", "Wi", "di", "Ui"]].to_numpy()
+    return full_curve_mean(_reach, physical, json.loads(curve_json))
 
 
 @st.cache_data(show_spinner=False, max_entries=256)
@@ -241,38 +248,54 @@ def sidebar(curves):
                         st.error(str(exc))
             st.download_button("Download current CSV examples", curve_zip(curve), "gift_curve_examples.zip", mime="application/zip", on_click="ignore")
         st.divider()
-        st.radio("EROM flow period", ["Single month", "Month range"], horizontal=True, key="period_mode", on_change=period_mode_changed)
+        mean_hsi = st.session_state.get("mean_hsi", False)
+        st.radio("EROM flow period", ["Single month", "Month range"], horizontal=True, key="period_mode",
+                 on_change=period_mode_changed, disabled=mean_hsi)
         if st.session_state.period_mode == "Single month":
-            st.selectbox("Month", range(1, 13), format_func=lambda m: MONTHS[m-1], key="single_month", on_change=remember_month, args=("single_month",))
+            st.selectbox("Month", range(1, 13), format_func=lambda m: MONTHS[m-1], key="single_month", on_change=remember_month, args=("single_month",), disabled=mean_hsi)
             months = [int(st.session_state.single_month)]
             require_all = True
         else:
             a, b = st.columns(2)
-            a.selectbox("From", range(1, 13), format_func=lambda m: MONTHS[m-1], key="start_month", on_change=remember_month, args=("start_month",))
-            b.selectbox("Through", range(1, 13), format_func=lambda m: MONTHS[m-1], key="end_month", on_change=remember_month, args=("end_month",))
+            a.selectbox("From", range(1, 13), format_func=lambda m: MONTHS[m-1], key="start_month", on_change=remember_month, args=("start_month",), disabled=mean_hsi)
+            b.selectbox("Through", range(1, 13), format_func=lambda m: MONTHS[m-1], key="end_month", on_change=remember_month, args=("end_month",), disabled=mean_hsi)
             months = month_range(int(st.session_state.start_month), int(st.session_state.end_month))
-            require_all = st.checkbox("Require every selected month", value=True, key="require_all",
+            require_all = st.checkbox("Require every selected month", value=True, key="require_all", disabled=mean_hsi,
                 help="When checked, habitat is withheld if any selected month is unsupported. Otherwise, the median uses available months and marks partial coverage.")
             st.caption("Ranges include both endpoints and can cross December.")
-        st.button("Restore life-stage default", on_click=stage_changed, args=(curves,), width="stretch")
+        st.button("Restore life-stage default", on_click=stage_changed, args=(curves,), width="stretch", disabled=mean_hsi)
+        if mean_hsi:
+            st.caption("Monthly flow selections are inactive while mean HSI is mapped.")
         st.caption(curve.get("periodNote", "Editable assessment period."))
         if curve.get("periodSource"):
             st.markdown(f"[Timing reference]({curve['periodSource']})")
         cfs = st.radio("Flow units", ["cfs", "m³/s"], horizontal=True, key="flow_units") == "cfs"
         st.divider()
-        st.markdown("**Network bankfull geometry**")
-        st.selectbox("Bankfull width regression", NETWORK_BANKFULL_OPTIONS, key="network_width_source")
-        st.selectbox("Bankfull depth regression", NETWORK_BANKFULL_OPTIONS, key="network_depth_source")
-        st.caption("Both selections apply to every segment on the map. Custom values below the map "
-                   "apply only to the selected segment's plots.")
-        st.toggle("Map mean HSI across the full flow curve", value=False, key="mean_hsi",
-                  help="Off: median habitat at the selected monthly flows. On: each segment's mean HSI "
-                       "over its entire modeled discharge range, using 201 equally spaced flows.")
-        st.caption("Mean mode averages over discharge, without flow-duration weighting.")
-        st.divider()
         st.caption("Monthly flows are 1971–2000 climatological means, not current observations.")
         st.caption("GIFT Python model · GPL-3.0")
     return curve, months, require_all, cfs
+
+
+def network_controls():
+    """Full-app widgets above the map also update disabled sidebar controls."""
+    with st.container(key="network-controls", border=True):
+        width, depth, mean = st.columns([1, 1, 1.1], vertical_alignment="bottom")
+        width.selectbox("Bankfull width regression", NETWORK_BANKFULL_OPTIONS, key="network_width_source")
+        depth.selectbox("Bankfull depth regression", NETWORK_BANKFULL_OPTIONS, key="network_depth_source")
+        mean.toggle("Map mean HSI", value=False, key="mean_hsi",
+                    help="Off: median habitat at selected monthly flows. On: each segment's mean HSI "
+                         "over its full modeled flow curve, without flow-duration weighting.")
+        st.caption("Regressions apply to every segment. Individual plot edits do not change map values.")
+
+
+def fit_network():
+    st.session_state.view_focus = None
+    st.session_state.view_revision += 1
+
+
+def zoom_to_segment():
+    st.session_state.view_focus = st.session_state.selected_id
+    st.session_state.view_revision += 1
 
 
 def monthly_display(frame, cfs):
@@ -286,34 +309,50 @@ def monthly_display(frame, cfs):
         "v":"Velocity suitability", "s":"Substrate suitability", "hsi":"HSI", "wua":"WUA (m²/m)", "status":"Availability"})
 
 
-def inspector(reach, monthly, summary, months, cfs):
+def inspector(reach, monthly, summary, months, cfs, mean_hsi=False):
     st.caption("SELECTED SEGMENT")
     st.subheader(reach["name"])
     st.caption(f"COMID {reach['id']}")
-    if st.session_state.get("inspect_month") not in months:
-        st.session_state.inspect_month = months[0]
-    detail = st.selectbox("Inspect month", months, format_func=lambda m: MONTHS[m-1], key="inspect_month")
-    row = monthly[monthly.month.eq(detail)].iloc[0]
-    factor, unit = (CFS_PER_M3S, "cfs") if cfs else (1, "m³/s")
-    st.metric(f"{MONTHS[detail-1]} EROM flow ({unit})", number(row.q * factor if pd.notna(row.q) else None))
-    table = pd.DataFrame({"Component": ["Mean depth", "Mean velocity", "Substrate D84"],
-                          "Raw value": [f"{number(row.depth)} m", f"{number(row.velocity)} m/s", f"{number(reach['d84'],1)} mm"],
-                          "Suitability": [number(row.d), number(row.v), number(row.s)]})
-    st.dataframe(table, hide_index=True, width="stretch", height=145)
-    a, b = st.columns(2)
-    a.metric("Monthly HSI", number(row.hsi))
-    b.metric("Monthly WUA (m²/m)", number(row.wua))
-    if row.status not in ("ok", "zero_flow"):
-        st.warning(STATUS_LABELS.get(row.status, row.status))
-    else:
-        st.caption(STATUS_LABELS[row.status])
-    if reach["modelStatus"] != "ok":
-        st.caption(reach["modelStatus"])
-    if len(months) > 1:
-        st.markdown(f"**{period_label(months)}** · {int(summary.validCount)}/{len(months)} supported months")
-        st.caption(f"HSI {number(summary.hsi)} · WUA {number(summary.wua)} m²/m")
+    detail = None
+    if mean_hsi:
+        st.caption("Full-curve means for this segment; monthly flow selections are inactive.")
+        table = pd.DataFrame({"Component": ["Mean depth", "Mean velocity", "Substrate D84"],
+                              "Raw value": [f"{number(summary.depth)} m", f"{number(summary.velocity)} m/s",
+                                            f"{number(reach['d84'], 1)} mm"],
+                              "Mean suitability": [number(summary.d), number(summary.v), number(summary.s)]})
+        st.dataframe(table, hide_index=True, width="stretch", height=145)
+        a, b = st.columns(2)
+        a.metric("Mean HSI", number(summary.hsi))
+        b.metric("Mean WUA (m²/m)", number(summary.wua))
         if summary.status != "ok":
-            st.caption(STATUS_LABELS.get(summary.status, summary.status))
+            st.info(STATUS_LABELS.get(summary.status, summary.status))
+        if reach["modelStatus"] != "ok":
+            st.caption(reach["modelStatus"])
+    else:
+        if st.session_state.get("inspect_month") not in months:
+            st.session_state.inspect_month = months[0]
+        detail = st.selectbox("Inspect month", months, format_func=lambda m: MONTHS[m-1], key="inspect_month")
+        row = monthly[monthly.month.eq(detail)].iloc[0]
+        factor, unit = (CFS_PER_M3S, "cfs") if cfs else (1, "m³/s")
+        st.metric(f"{MONTHS[detail-1]} EROM flow ({unit})", number(row.q * factor if pd.notna(row.q) else None))
+        table = pd.DataFrame({"Component": ["Mean depth", "Mean velocity", "Substrate D84"],
+                              "Raw value": [f"{number(row.depth)} m", f"{number(row.velocity)} m/s", f"{number(reach['d84'],1)} mm"],
+                              "Suitability": [number(row.d), number(row.v), number(row.s)]})
+        st.dataframe(table, hide_index=True, width="stretch", height=145)
+        a, b = st.columns(2)
+        a.metric("Monthly HSI", number(row.hsi))
+        b.metric("Monthly WUA (m²/m)", number(row.wua))
+        if row.status not in ("ok", "zero_flow"):
+            st.warning(STATUS_LABELS.get(row.status, row.status))
+        else:
+            st.caption(STATUS_LABELS[row.status])
+        if reach["modelStatus"] != "ok":
+            st.caption(reach["modelStatus"])
+        if len(months) > 1:
+            st.markdown(f"**{period_label(months)}** · {int(summary.validCount)}/{len(months)} supported months")
+            st.caption(f"HSI {number(summary.hsi)} · WUA {number(summary.wua)} m²/m")
+            if summary.status != "ok":
+                st.caption(STATUS_LABELS.get(summary.status, summary.status))
     st.caption(f"Temperature score: {number(reach['temp'])} · Priority score: {number(reach['priority'])}")
     with st.expander("Network hydraulic input values"):
         st.dataframe(pd.DataFrame([
@@ -353,10 +392,12 @@ def workspace(network, curve, monthly, summary, months, cfs, signature, mean_hsi
             except (ValueError, RuntimeError):
                 hyd = pd.DataFrame()
             evaluated = reach_with_hydraulics(reach, hyd)
-            selected_monthly = compute_monthly([evaluated], curve) if hyd.empty else cached_reach_monthly(
-                selected_id, curve_json, parameters, model_signature,
-                tuple(row[0] for row in reach["months"]), reach.get("summerWidth"), reach)
-        selected_summary = aggregate_period(selected_monthly, months, bool(summary.requireAll.iloc[0])).loc[selected_id]
+            if not mean_hsi:
+                selected_monthly = compute_monthly([evaluated], curve) if hyd.empty else cached_reach_monthly(
+                    selected_id, curve_json, parameters, model_signature,
+                    tuple(row[0] for row in reach["months"]), reach.get("summerWidth"), reach)
+        selected_summary = (summary.loc[selected_id] if mean_hsi else
+                            aggregate_period(selected_monthly, months, bool(summary.requireAll.iloc[0])).loc[selected_id])
         if any(row[4] == "pending_selection" for row in reach["months"]):
             if selected_id not in st.session_state._evaluated_reaches:
                 st.session_state._evaluated_reaches[selected_id] = evaluated
@@ -365,7 +406,7 @@ def workspace(network, curve, monthly, summary, months, cfs, signature, mean_hsi
     # Shared comparison/export caches must distinguish which reaches were
     # evaluated, including two users who have evaluated the same number of IDs.
     overview_revision = (tuple(sorted(overrides)), mean_hsi)
-    if overrides:
+    if overrides and not mean_hsi:
         features = [overrides.get(r["id"], r) for r in features]
         updated = [cached_reach_monthly(
             r["id"], curve_json, hydraulic_parameters(r), model_signature,
@@ -380,7 +421,7 @@ def workspace(network, curve, monthly, summary, months, cfs, signature, mean_hsi
     pending = [r["id"] for r in features if any(row[4] == "pending_selection" for row in r["months"])]
     network = dict(network, features=features,
                    metadata=dict(network["metadata"], pendingHydraulics=pending))
-    mapping_summary = cached_full_curve_summary(curve_json, signature) if mean_hsi else summary
+    mapping_summary = summary
     a, b, c = st.columns([3, 1.25, 1])
     layer = a.radio("Network Layer", ["GIFT habitat", "Temperature Suitability", "Provisional Priority"], horizontal=True, key="network_layer")
     metric_labels = {"hsi":"HSI", "wua":"WUA"}
@@ -408,30 +449,29 @@ def workspace(network, curve, monthly, summary, months, cfs, signature, mean_hsi
     if mean_hsi:
         st.caption("Mean HSI is the area under each segment's HSI–discharge curve divided by its modeled "
                    "discharge range, estimated from 201 equally spaced flows. Selected months do not "
-                   "affect this map. The inspector and gold plot markers retain the selected monthly flows.")
+                   "affect the map or plots. Gold diamonds show the full-curve means.")
     if pending:
         st.info(f"{len(pending)} segments await habitat calculation. Select a segment to calculate it; gray values are unavailable until evaluated.")
     if layer == "Temperature Suitability":
         st.info("Temperature scores describe juvenile-salmon suitability under the supplied interpretation of See et al. (2021) using NoRWeST mean August stream temperature. They do not change with the selected life stage or month.")
     elif layer == "Provisional Priority":
-        st.caption("Provisional Model stream segment restoration priority")
+        st.info("Provisional Model stream segment restoration priority")
     left, right = st.columns([2.6, 1], gap="large")
     with left:
-        fit_a, fit_b, _ = st.columns([1, 1, 2])
-        if fit_a.button("Fit network", width="stretch"):
-            st.session_state.view_focus = None
-            st.session_state.view_revision += 1
-        if fit_b.button("Zoom to segment", width="stretch", disabled=selected_id is None):
-            st.session_state.view_focus = selected_id
-            st.session_state.view_revision += 1
         focus = st.session_state.get("view_focus")
         if focus not in content["views"]:
             content["views"][focus] = map_view(features, focus)
         deck = network_map(content["records"], content["views"][focus], selected_id, basemap)
         key = f"network-map-{st.session_state.view_revision}"
-        st.pydeck_chart(
-            deck, key=key, height=530, on_select=lambda: map_selected(key, content["allowed"]),
-            selection_mode="single-object")
+        with st.container(key="map-shell"):
+            st.pydeck_chart(
+                deck, key=key, height=530, on_select=lambda: map_selected(key, content["allowed"]),
+                selection_mode="single-object")
+            with st.container(key="map-actions", horizontal=True, gap="small"):
+                st.button("Fit network", key="fit-network", icon=":material/fit_screen:",
+                          help="Fit network", on_click=fit_network)
+                st.button("Zoom to segment", key="zoom-to-segment", icon=":material/my_location:",
+                          help="Zoom to segment", on_click=zoom_to_segment, disabled=selected_id is None)
         colors = legend_gradient(content["palette"])
         st.markdown(f'<div class="legend"><span>{content["title"]} &nbsp; 0</span><div style="background:linear-gradient(90deg,{colors})"></div><span>{number(content["high"])}</span></div>', unsafe_allow_html=True)
         st.caption(potential_maximum_note(layer, metric))
@@ -442,10 +482,11 @@ def workspace(network, curve, monthly, summary, months, cfs, signature, mean_hsi
         if reach is None:
             st.info("Select a stream segment or comparison point to calculate its hydraulic and habitat curves.")
         else:
-            inspector(reach, selected_monthly, selected_summary, months, cfs)
+            inspector(reach, selected_monthly, selected_summary, months, cfs, mean_hsi)
     if reach is not None:
-        diagnostics_panel(reach, selected_monthly, selected_summary, months, cfs, curve, network["metadata"])
-        flow_panel(reach, selected_monthly, months, cfs, curve_json, signature)
+        if not mean_hsi:
+            diagnostics_panel(reach, selected_monthly, selected_summary, months, cfs, curve, network["metadata"])
+        flow_panel(reach, selected_monthly, months, cfs, curve_json, signature, mean_hsi)
     comparison_panel(features, mapping_summary, selected_id, curve_json, months, signature, overview_revision, mean_hsi)
     network_downloads(network, mapping_summary, curve, months, bool(summary.requireAll.iloc[0]), signature,
                       overview_revision)
@@ -508,8 +549,15 @@ def diagnostics_panel(reach, monthly, summary, months, cfs, curve, metadata):
                            f"gift_{reach['id']}_diagnostics.json", mime="application/json", on_click="ignore")
 
 
-def remember_plot_input(comid, field, key):
-    st.session_state._plot_choices.setdefault(comid, {})[field] = st.session_state[key]
+def remember_plot_input(comid, kind, key, network_default=None):
+    choices = st.session_state._plot_choices.setdefault(comid, {})
+    value = st.session_state[key]
+    choices["custom_"+kind] = value
+    if kind == "max_depth":
+        return
+    same = (value is None and network_default is None) if value is None or network_default is None else bool(
+        np.isclose(value, network_default, rtol=1e-12, atol=1e-12))
+    choices["override_"+kind] = not same
 
 
 def reset_plot_inputs(reach):
@@ -520,56 +568,52 @@ def reset_plot_inputs(reach):
 
 
 def plot_controls(reach):
-    """Persist custom inputs by COMID; unchecked fields follow network choices."""
+    """Editable defaults with internal change tracking and no override switches."""
     comid = reach["id"]
     st.session_state.setdefault("_plot_choices", {})
     choices = st.session_state._plot_choices.setdefault(comid, default_overrides(reach))
     with st.expander("Adjust selected-segment hydraulics", expanded=True):
-        st.caption("These inputs apply to this segment's response curves and monthly plot results. "
-                   "The network map and comparisons retain the regressions selected in the sidebar.")
+        st.caption("Edit these values for this segment's plots and downloads. The map and comparisons "
+                   "retain the network regressions selected above the map.")
         columns = st.columns(2)
         definitions = (("width", "Bankfull width", "bfWidth", "m", .01, "%.4f"),
                        ("depth", "Mean bankfull depth", "bfDepth", "m", .01, "%.4f"),
                        ("slope", "Slope", "slope", "m/m", .0001, "%.7f"),
                        ("d84", "D84", "d84", "mm", 1., "%.3f"))
         for index, (kind, label, field, units, step, fmt) in enumerate(definitions):
-            col = columns[index % 2]
-            with col:
-                name, key = "override_"+kind, f"plot-{comid}-override_{kind}"
-                st.session_state.setdefault(key, choices.get(name, False))
-                st.toggle("Custom "+label.lower()+" for this plot", key=key,
-                             on_change=remember_plot_input, args=(comid, name, key))
-                choices[name] = st.session_state[key]
-                if choices[name]:
-                    value_name, value_key = "custom_"+kind, f"plot-{comid}-custom_{kind}"
-                    value = choices.get(value_name)
-                    if value is None:
-                        value = reach.get(field)
-                    st.session_state.setdefault(value_key, float(value) if value is not None and np.isfinite(value) else 0.)
-                    st.number_input(f"{label} for plotting ({units})", min_value=0., step=step,
-                                    format=fmt, key=value_key,
-                                    on_change=remember_plot_input, args=(comid, value_name, value_key))
-                    choices[value_name] = st.session_state[value_key]
-                else:
-                    st.caption(f"Network {label.lower()}: {number(reach.get(field), 7 if kind == 'slope' else 3)} {units}")
-        st.button("Reset plot inputs", key=f"reset-plot-{comid}", width="stretch",
+            name, key = "custom_"+kind, f"plot-{comid}-custom_{kind}"
+            # Unedited fields follow any new network regression. Explicit edits
+            # persist by COMID, including a deliberately cleared required value.
+            if not choices.get("override_"+kind, False):
+                choices[name] = reach.get(field)
+                st.session_state[key] = reach.get(field)
+            else:
+                st.session_state.setdefault(key, choices.get(name))
+            columns[index % 2].number_input(f"{label} for plotting ({units})", min_value=0., value=None,
+                step=step, format=fmt, key=key, placeholder="Enter a value",
+                on_change=remember_plot_input, args=(comid, kind, key, reach.get(field)))
+        maximum_key = f"plot-{comid}-custom_max_depth"
+        st.session_state.setdefault(maximum_key, choices.get("custom_max_depth"))
+        st.number_input("Maximum bankfull depth for plotting (m)", min_value=0., value=None,
+                        step=.01, format="%.4f", key=maximum_key, placeholder="Automatic (leave blank)",
+                        on_change=remember_plot_input, args=(comid, "max_depth", maximum_key))
+        st.caption("Leave maximum depth blank for automatic behavior: unchanged CHaMP dimensions use "
+                   "the segment's source maximum; alternative or edited width/depth uses GIFT's "
+                   "width/depth shape estimate. An entered maximum overrides this behavior for the plot.")
+        st.button("Restore segment defaults", key=f"reset-plot-{comid}", width="stretch",
                   on_click=reset_plot_inputs, args=(reach,))
         sources = reach.get("networkInputs", {"width_source": CHAMP, "depth_source": CHAMP})
         region = getattr(settings, "BIEGER_REGION", "IMP")
         for note in regression_notes(reach, sources, region):
             st.caption(note)
-        if (choices["override_width"] or choices["override_depth"] or
-                sources["width_source"] != CHAMP or sources["depth_source"] != CHAMP):
-            st.caption("Maximum bankfull depth is not supplied. GIFT estimates shape factor from "
-                       "(bankfull width / mean bankfull depth) / 100.")
     return apply_plot_overrides(reach, choices)
 
 
 @st.fragment
-def flow_panel(reach, selected_monthly, months, cfs, curve_json, signature):
-    """Tab switches update the flow panel without redrawing the map."""
+def flow_panel(reach, selected_monthly, months, cfs, curve_json, signature, mean_hsi=False):
+    """Render monthly or full-flow mean plots without redrawing the map."""
     selected_id = reach["id"]
-    detail = st.session_state.inspect_month
+    detail = None if mean_hsi else st.session_state.inspect_month
     st.subheader("Habitat response to flow")
     st.caption(f"{reach['name']} (COMID: {selected_id}) · {json.loads(curve_json)['label']}")
     try:
@@ -577,35 +621,43 @@ def flow_panel(reach, selected_monthly, months, cfs, curve_json, signature):
     except (ValueError, KeyError) as exc:
         st.error(f"Plot inputs: {exc}")
         st.info("A flow-response curve is unavailable because this segment has missing hydraulic inputs "
-                "or invalid plot values. Choose another regression or enter positive custom values.")
+                "or invalid plot values. Choose another regression or enter positive values.")
         return
     parameters = hydraulic_parameters(adjusted)
+    model_signature = hydraulic_model_signature()
     try:
-        hyd = cached_hydraulics(selected_id, parameters, hydraulic_model_signature())
-    except ValueError as exc:
+        hyd = cached_hydraulics(selected_id, parameters, model_signature)
+    except (ValueError, RuntimeError) as exc:
         st.error(f"Plot inputs: {exc}")
         return
     reach = reach_with_hydraulics(adjusted, hyd)
-    selected_monthly = cached_reach_monthly(selected_id, curve_json, parameters,
-        hydraulic_model_signature(), tuple(row[0] for row in reach["months"]), reach.get("summerWidth"), reach)
+    mean = None
+    if mean_hsi:
+        mean = cached_plot_mean(selected_id, curve_json, parameters, model_signature, reach.get("summerWidth"), reach)
+    else:
+        selected_monthly = cached_reach_monthly(selected_id, curve_json, parameters, model_signature,
+            tuple(row[0] for row in reach["months"]), reach.get("summerWidth"), reach)
     a, b, c, d = st.columns(4)
     a.metric("Plot bankfull width (m)", number(reach["bfWidth"]))
     b.metric("Plot mean bankfull depth (m)", number(reach["bfDepth"]))
     c.metric("Plot slope (m/m)", f"{reach['slope']:.6g}")
-    factor, unit = (CFS_PER_M3S, "cfs") if cfs else (1., "m³/s")
-    d.metric(f"Plot bankfull flow ({unit})", number(reach.get("qMax")*factor if reach.get("qMax") is not None else None))
+    if mean_hsi:
+        d.metric("Plot mean HSI", number(mean["hsi"]))
+    else:
+        factor, unit = (CFS_PER_M3S, "cfs") if cfs else (1., "m³/s")
+        d.metric(f"Plot bankfull flow ({unit})", number(reach.get("qMax")*factor if reach.get("qMax") is not None else None))
     wua_tab, hsi_tab, geometry_tab = st.tabs(["WUA", "HSI", "Channel Geometry"], key="flow_tabs", on_change="rerun")
-    # Opening geometry does not evaluate the 981-level habitat response.
+    results_key = "full_curve_results" if mean_hsi else "monthly_results"
     native = pd.DataFrame()
-    if wua_tab.open or hsi_tab.open or st.session_state.get("monthly_results", False):
-        native = cached_native(selected_id, curve_json, hydraulic_parameters(reach),
-                               hydraulic_model_signature(), reach.get("summerWidth"), reach)
+    if wua_tab.open or hsi_tab.open or st.session_state.get(results_key, False):
+        native = cached_native(selected_id, curve_json, parameters, model_signature, reach.get("summerWidth"), reach)
         if native.empty:
             st.info("A flow-response curve is unavailable because this segment has missing hydraulic inputs.")
     for tab, field in ((wua_tab, "wua"), (hsi_tab, "hsi")):
         if tab.open:
             with tab:
-                st.plotly_chart(flow_figure(native, selected_monthly, months, detail, field, cfs), width="stretch", key=f"flow-{field}")
+                st.plotly_chart(flow_figure(native, selected_monthly, months, detail, field, cfs, mean=mean),
+                                width="stretch", key=f"flow-{field}")
     if geometry_tab.open:
         with geometry_tab:
             st.plotly_chart(channel_geometry_figure(reach), width="stretch", key="channel-geometry")
@@ -614,18 +666,36 @@ def flow_panel(reach, selected_monthly, months, cfs, curve_json, signature):
                        f"{number(reach['bfDepth'])} m; GIFT shape factor {number(reach.get('shapeUsed'), 5)}; "
                        f"modeled maximum depth {number(maximum)} m. The vertical axis is exaggerated. "
                        "This is GIFT's assumed cross section, not a surveyed section.")
-    st.caption(f"Substrate suitability = {number(selected_monthly.iloc[0].s)} at plot D84 = {number(reach['d84'],1)} mm. Dashed component curves use the right axis. Gold points are separately evaluated monthly results; pale shading spans the selected flows (a dotted line marks a single flow). No extrapolation beyond the modeled flow range.")
-    details = st.expander("Monthly results for this segment", key="monthly_results", on_change="rerun")
+    substrate = mean["s"] if mean_hsi else selected_monthly.iloc[0].s
+    st.caption(f"Substrate suitability = {number(substrate)} at plot D84 = {number(reach['d84'],1)} mm. "
+               "Dashed component curves use the right axis. No extrapolation beyond the modeled flow range.")
+    if mean_hsi:
+        st.caption("Gold diamond: mean HSI or WUA across the full modeled discharge range, shown at "
+                   "the range midpoint. Its height is the curve average, rather than the curve value "
+                   "at that discharge. Monthly markers and flow-range shading are inactive.")
+    else:
+        st.caption("Gold points are separately evaluated monthly results; pale shading spans selected "
+                   "flows, with a dotted line for a single flow.")
+    label = "Full-curve summary and downloads" if mean_hsi else "Monthly results for this segment"
+    details = st.expander(label, key=results_key, on_change="rerun")
     if details.open:
         with details:
-            selected_rows = selected_monthly.set_index("month").loc[months].reset_index()
-            selected_rows["D84_mm"] = reach["d84"]
-            st.dataframe(monthly_display(selected_rows, cfs), hide_index=True, width="stretch")
-            st.caption("Raw values refer to each listed month's exact flow; component suitability incorporates GIFT's within-reach distributions.")
-            export = selected_rows.drop(columns=["summer_width", "normalized"]).rename(columns={"id":"COMID", "q":"EROM_Q_m3s", "depth":"mean_depth_m", "velocity":"mean_velocity_m_s", "width":"wetted_width_m", "wua":"WUA_m2_per_m"})
-            st.download_button("Download monthly results (SI units)", csv_bytes(plot_export(export, reach)), f"gift_{selected_id}_monthly.csv", mime="text/csv", on_click="ignore")
+            if mean_hsi:
+                st.dataframe(pd.DataFrame({"Measure": ["Mean HSI", "Mean WUA (m²/m)",
+                    "Mean depth suitability", "Mean velocity suitability", "Substrate suitability"],
+                    "Value": [mean[k] for k in ("hsi", "wua", "d", "v", "s")]}),
+                    hide_index=True, width="stretch")
+            else:
+                selected_rows = selected_monthly.set_index("month").loc[months].reset_index()
+                selected_rows["D84_mm"] = reach["d84"]
+                st.dataframe(monthly_display(selected_rows, cfs), hide_index=True, width="stretch")
+                st.caption("Raw values refer to each listed month's exact flow; component suitability incorporates GIFT's within-reach distributions.")
+                export = selected_rows.drop(columns=["summer_width", "normalized"]).rename(columns={"id":"COMID", "q":"EROM_Q_m3s", "depth":"mean_depth_m", "velocity":"mean_velocity_m_s", "width":"wetted_width_m", "wua":"WUA_m2_per_m"})
+                st.download_button("Download monthly results (SI units)", csv_bytes(plot_export(export, reach)), f"gift_{selected_id}_monthly.csv", mime="text/csv", on_click="ignore")
             if not native.empty:
-                st.download_button("Download full flow-response curve (SI units)", csv_bytes(plot_export(native.drop(columns=["normalized"]).rename(columns={"q":"Q_m3s","depth":"mean_depth_m","velocity":"mean_velocity_m_s","width":"wetted_width_m","wua":"WUA_m2_per_m"}), reach)), f"gift_{selected_id}_flow_curve.csv", mime="text/csv", on_click="ignore")
+                export = native.drop(columns=["normalized"]).rename(columns={"q":"Q_m3s", "depth":"mean_depth_m", "velocity":"mean_velocity_m_s", "width":"wetted_width_m", "wua":"WUA_m2_per_m"})
+                st.download_button("Download full flow-response curve (SI units)", csv_bytes(plot_export(export, reach)),
+                                   f"gift_{selected_id}_flow_curve.csv", mime="text/csv", on_click="ignore")
 
 
 @st.fragment
@@ -673,7 +743,7 @@ def network_downloads(network, summary, curve, months, require_all, signature, o
 def methods(network):
     metadata = network["metadata"]
     with st.expander("Input sources and field mappings"):
-        st.caption("These are the files and columns used for the loaded model inputs. Source units are converted to SI for calculation. Edit settings.py, then use Reload input data in the sidebar or restart the app.")
+        st.caption("These are the files and columns used for the loaded model inputs. Source units are converted to SI for calculation. Edit settings.py, then rerun or restart the app. Input sources are checked on every full rerun.")
         st.dataframe(pd.DataFrame(input_source_rows(metadata)), hide_index=True, width="stretch")
     with st.expander("Data and methods"):
         st.markdown("""
@@ -683,14 +753,14 @@ mean depth, slope, D84, and monthly flows come from the configured streams layer
 Maximum depth and priority use their configured ID joins. Temperature uses the
 explicitly configured streams or priority source. Missing values remain unavailable.
 
-**Hydraulics and habitat.** The sidebar selects independent bankfull width and
+**Hydraulics and habitat.** The controls above the map select independent bankfull width and
 depth regressions for every segment: CHaMP Regression, Bieger 2015 National,
 Bieger 2015 Regional, or Castro and Jackson 2001. CHaMP is the default and uses
 `1 - mean bankfull depth / maximum bankfull depth` for its shape factor.
 Selected-segment plots can override width, mean depth, slope, and D84.
 Plot overrides are saved separately for each segment and do not replace network scores.
-Alternative or custom width/depth omits maximum bankfull depth; GIFT then uses
-`(bankfull width / mean bankfull depth) / 100` for its shape factor.
+With a blank plot maximum-depth field, alternative or custom width/depth omits maximum bankfull depth; GIFT then uses
+`(bankfull width / mean bankfull depth) / 100` for its shape factor. An entered maximum depth overrides this behavior for that plot.
 The Bieger 2015 Regional division is configured by `BIEGER_REGION` in settings.py
 (Intermontane Plateau for this network). Castro and Jackson uses the Western
 Cordillera drainage-area relationships verified against USGS StreamStats,
@@ -750,6 +820,20 @@ def main():
     [data-testid="stMetricValue"] {font-size:1.65rem;color:#186354}
     .legend {display:flex;align-items:center;gap:12px;font-size:13px;color:#486058;margin-top:8px}
     .legend div {height:9px;flex:1;border-radius:4px;max-width:280px}
+    .st-key-map-shell {position:relative}
+    .st-key-map-actions {
+        position:absolute !important;top:12px;left:12px;z-index:10;
+        width:96px !important;gap:8px !important;
+    }
+    .st-key-map-actions button {
+        width:44px;min-width:44px;height:42px;min-height:42px;padding:0;gap:0;
+        background:white;color:#183e36;border:1px solid #ccd7d0;
+        box-shadow:0 1px 5px #183e3626;
+    }
+    .st-key-map-actions button [data-testid="stMarkdownContainer"] p {
+        font-size:0;line-height:0;margin:0;
+    }
+    .st-key-map-actions button:disabled {opacity:.5}
     /* Tooltips appear only when a pickable stream or comparison dot is hit.
        Keep the map's normal grab cursor and the graph's pan cursor elsewhere. */
     [data-testid="stDeckGlJsonChart"]:has(.deck-tooltip[style*="display: block"]) canvas,
@@ -764,8 +848,6 @@ def main():
     </style>""", unsafe_allow_html=True)
     st.title(APP_TITLE)
     st.caption("Geomorphic Instream Flow Tool results across the Upper Grande Ronde basin.")
-    if st.sidebar.button("Reload input data", help="Reread settings.py and check for changes to source files and field mappings."):
-        st.rerun()
     try:
         with st.spinner("Loading stream network…"):
             sources = data_signature()
@@ -778,6 +860,7 @@ def main():
     st.session_state.setdefault("selection_revision", 0)
     curve, months, require_all, cfs = sidebar([*curves, gift_shiny_default()])
     st.session_state.current_curve = curve
+    network_controls()
     signature = (sources, st.session_state.network_width_source, st.session_state.network_depth_source,
                  getattr(settings, "BIEGER_REGION", "IMP"), hydraulic_model_signature())
     mean_hsi = st.session_state.mean_hsi
@@ -786,10 +869,12 @@ def main():
             network = cached_network_solution(signature)[0] if mean_hsi else cached_geometry(signature)
     if mean_hsi:
         with st.spinner("Averaging HSI over each segment's modeled flow curve…"):
-            cached_full_curve_summary(json.dumps(curve, sort_keys=True), signature)
-    with st.spinner("Evaluating monthly habitat with GIFT…"):
-        monthly = cached_monthly(json.dumps(curve, sort_keys=True), signature, mean_hsi)
-        summary = aggregate_period(monthly, months, require_all)
+            summary = cached_full_curve_summary(json.dumps(curve, sort_keys=True), signature)
+        monthly = None
+    else:
+        with st.spinner("Evaluating monthly habitat with GIFT…"):
+            monthly = cached_monthly(json.dumps(curve, sort_keys=True), signature)
+            summary = aggregate_period(monthly, months, require_all)
     workspace(network, curve, monthly, summary, months, cfs, signature, mean_hsi)
     methods(network)
 

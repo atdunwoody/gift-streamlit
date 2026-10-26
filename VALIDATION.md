@@ -1,5 +1,34 @@
 # Validation record
 
+## Editable inputs and supplied defaults, 2026-10-26
+
+**132 automated tests passed.** Checks include the existing frozen-R numerical
+references, byte-identical supplied default CSVs, directly editable segment
+values, maximum-depth validation and provenance, restoring all defaults,
+network isolation from local edits, disabled monthly controls in mean mode,
+removal of segment monthly values and markers, mean-point coordinates, map
+control placement, and automatic input verification without a reload button.
+The existing source-join, scientific, cache, and portability checks still pass.
+
+The user-supplied graph-derived CSVs resolve the earlier preset-data blocker.
+The depth and velocity tables each contain 351 rows; substrate has 72 classes.
+Their values are used unchanged. Original filenames and SHA-256 checksums are
+retained under `tests/regression_reference/gift_shiny_defaults.json` and in
+`inputs/curves/SHINY_DEFAULT_SOURCE.md`. These files are the authorized defaults;
+no claim is made that they are independently recovered live-Shiny source tables.
+
+Local Chromium browser checks verified the rendered map icon controls remain
+inside the map, actual comparison-point selection opens the segment panel,
+the maximum-depth input starts blank, mean mode disables the sidebar controls
+and renders a full-curve mean marker, and switching back restores the monthly
+inspector. The check reported zero browser JavaScript errors or app exceptions.
+These were local checks; no external deployment was performed.
+
+Default startup still uses the bundled CHaMP overview and performs zero hydraulic
+solves. Original GIFT model files, prepared CHaMP data, GeoPackages, and pinned
+application dependencies are unchanged. Maximum-depth entry is plot-only;
+leaving it blank preserves the documented automatic maximum-depth policy.
+
 ## Network scenarios and plot options, 2026-10-26
 
 **124 tests passed:** the full 122-test suite passed in 122.16 seconds, followed

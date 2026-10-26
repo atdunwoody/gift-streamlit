@@ -85,31 +85,37 @@ the cached hydraulics and evaluate habitat; repeat selections reuse both caches.
 
 ## Features
 
-- Independent network bankfull width and mean-depth regressions: CHaMP Regression,
+- Independent network bankfull width and mean-depth regressions above the map: CHaMP Regression,
   Bieger 2015 National, Bieger 2015 Regional, and Castro and Jackson 2001.
   Selections apply to all segments, the inspector, comparison plots, and exports.
 - Per-segment width, mean depth, slope, and D84 overrides apply only to response
   plots, the channel cross section, and selected-segment downloads. Choices
-  persist by segment; Reset plot inputs restores the active network geometry.
-- Alternative or custom width/depth omits maximum bankfull depth. GIFT uses
-  width/mean depth/100 for shape. Slope-only and D84-only overrides preserve
-  maximum depth when the network geometry is entirely CHaMP.
+  persist by segment; Restore segment defaults restores the active network geometry.
+- Segment values appear in editable numeric text boxes without override switches.
+  An optional maximum bankfull depth starts blank. Blank preserves the CHaMP
+  source maximum for unchanged CHaMP dimensions; alternative or edited width/depth
+  uses GIFT width/mean depth/100 for shape. Entered maximum depth overrides this
+  behavior for the selected plot and must be at least the mean bankfull depth.
   See `HYDRAULIC_OPTIONS.md` for equations, units, scope, and averaging.
 - A mean-HSI on/off switch, off by default. The default map uses median habitat
   at selected monthly flows. Mean mode averages each segment's entire modeled
   flow-response curve over discharge using 201 equally spaced flow samples.
-  It is not a temporal or flow-duration-weighted average.
+  It is not a temporal or flow-duration-weighted average. Monthly sidebar controls
+  are disabled in mean mode; segment monthly values, plot markers, and flow-range
+  shading are hidden. A gold diamond shows the full-curve mean at the modeled
+  discharge-range midpoint. Switching off restores monthly-flow displays.
 - Clickable stream segments with raw mean depth, mean velocity, predicted D84,
   component suitability, HSI, WUA, temperature score, and priority score.
 - Select reaches on the map or by clicking a comparison-plot point. Plot
-  selections also zoom to the selected reach. Buttons fit the network or zoom
+  selections also zoom to the selected reach. Icon controls on the map fit the network or zoom
   to the selected segment; the former COMID search selector has been removed.
 - Light, dark, and satellite basemaps. Basemap services require internet access;
   their provider availability is separate from the habitat calculations.
 - Single months and inclusive month ranges, including ranges across December.
 - Species/life-stage defaults and a reset button.
 - WUA, HSI, and Channel Geometry tabs below the map, with depth/velocity suitability
-  curves on the secondary axis and separately evaluated monthly flow markers.
+  curves on the secondary axis. Markers show selected monthly results in range
+  mode or the full-curve average in mean mode.
 - Network layers: GIFT habitat, Temperature Suitability, and Provisional Priority.
   Temperature colors place tan at 80% of the observed maximum, with matching legend stops.
 - Four selectable scatterplots: HSI versus temperature suitability, Provisional Model
@@ -124,8 +130,9 @@ the cached hydraulics and evaluate habitat; repeat selections reuse both caches.
   Diagnostics start collapsed when a selected flow exceeds bankfull.
 - Three-file custom suitability uploads, a sidebar View Suitability Curves popup,
   and downloadable CSV examples. Uploads are session-specific. Restarting the
-  server clears them. The GIFT Shiny Default loader requires verified source
-  CSVs; see `inputs/curves/SHINY_DEFAULT_SOURCE.md` for the outstanding data need.
+  server clears them. GIFT Shiny Default now uses the user-supplied graph-derived
+  CSVs unchanged. Source filenames and checksums are documented under
+  `inputs/curves/SHINY_DEFAULT_SOURCE.md`.
 - Downloads of the network period summary, selected segment's exact monthly
   results, and its native flow-response curve. CSV exports retain SI units
   regardless of the displayed flow units.
@@ -255,7 +262,8 @@ Drainage area accepts `km2` or `mi2`. A source field's units must match its
 configured units. Set optional display fields to `None` to disable them.
 Required columns must exist, while null row values are retained as unavailable.
 
-After edits, select **Reload input data** in the sidebar or restart the app.
+After edits, rerun or restart the app. Full reruns automatically check input
+files, settings, and field mappings; there is no separate reload button.
 Every full app rerun reads current settings and checks the source paths, layers,
 field mappings, units, file contents, curve CSVs, and calculation code against
 `data/build-info.json`. When inputs change, the app refreshes the stream attributes

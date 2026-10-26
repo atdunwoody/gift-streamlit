@@ -126,7 +126,6 @@ def test_ui_custom_inputs_persist_and_never_change_network_map(counted_solves):
     send_map_selection(at, 23428544)
     before_map = at.get("deck_gl_json_chart")[0].proto.json
     for kind, value in (("depth", .9), ("width", 35.), ("slope", .005), ("d84", 90.)):
-        at.toggle(key=f"plot-23428544-override_{kind}").set_value(True).run()
         at.number_input(key=f"plot-23428544-custom_{kind}").set_value(value).run()
         assert not at.exception and not at.error
     assert at.get("deck_gl_json_chart")[0].proto.json == before_map
@@ -134,17 +133,16 @@ def test_ui_custom_inputs_persist_and_never_change_network_map(counted_solves):
     assert counted_solves[-1][0][0] == .005
     assert "max_bankfull_depth" not in counted_solves[-1][1]
     send_map_selection(at, 23428378)
-    assert not at.toggle(key="plot-23428378-override_depth").value
+    assert at.number_input(key="plot-23428378-custom_depth").value is not None
     send_map_selection(at, 23428544)
     for kind, value in (("depth", .9), ("width", 35.), ("slope", .005), ("d84", 90.)):
-        assert at.toggle(key=f"plot-23428544-override_{kind}").value
         assert at.number_input(key=f"plot-23428544-custom_{kind}").value == value
     at.number_input(key="plot-23428544-custom_depth").set_value(.001).run()
     assert not at.exception and any("shape factor" in r.value for r in at.error)
     before_reset = len(counted_solves)
     at.button(key="reset-plot-23428544").click().run()
     assert not at.exception and not at.error
-    assert not at.toggle(key="plot-23428544-override_depth").value
+    assert at.number_input(key="plot-23428544-custom_depth").value == pytest.approx(.54768363737265)
     assert len(counted_solves) == before_reset  # Original solution is reused.
 
 
@@ -153,7 +151,6 @@ def test_ui_custom_dimensions_can_supply_missing_champ_inputs():
     at = AppTest.from_file(ROOT / "app.py", default_timeout=30).run()
     send_map_selection(at, 23429096)
     for kind, value in (("width", 4.), ("depth", .3)):
-        at.toggle(key=f"plot-23429096-override_{kind}").set_value(True).run()
         at.number_input(key=f"plot-23429096-custom_{kind}").set_value(value).run()
     assert not at.exception and not at.error
     assert any(p.proto.id.endswith("-flow-wua") for p in at.get("plotly_chart"))

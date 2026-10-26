@@ -1,6 +1,6 @@
 # Network and selected-segment hydraulic options
 
-Use **Network bankfull geometry** in the sidebar to choose independent width
+Use the **bankfull regression controls above the map** to choose independent width
 and mean-depth regressions for every segment. The default is CHaMP Regression
 for both dimensions. The map, inspector, comparison plots, and network export
 use these network choices. Bieger options are labeled **Bieger 2015 National**
@@ -8,16 +8,17 @@ and **Bieger 2015 Regional**.
 
 ## Segment-only overrides
 
-Select a segment, then open **Adjust selected-segment hydraulics**. Independent
-on/off switches allow custom bankfull width (m), mean bankfull depth (m), slope
-(m/m), and D84 (mm). Unchecked fields follow the current network scenario.
+Select a segment, then open **Adjust selected-segment hydraulics**. The
+editable numeric boxes start with the segment's current bankfull width (m),
+mean bankfull depth (m), slope (m/m), and D84 (mm). Editing a value changes the
+plot directly. Unedited fields follow the current network scenario.
 Custom values update only the response curves, Channel Geometry tab, monthly
 plot table, and segment CSV downloads. The map and network comparisons retain
-the sidebar regressions. D84 affects both hydraulic resistance and the substrate
+the above-map regressions. D84 affects both hydraulic resistance and the substrate
 suitability class; it is one representative grain size, not a grain-size distribution.
 
 Overrides persist by COMID in the current session, including when network
-regressions or species change. **Reset plot inputs** restores the active network
+regressions or species change. **Restore segment defaults** restores the active network
 scenario for that segment. Changing the underlying source data clears overrides.
 Invalid geometry remains unavailable with an explanation and can be corrected
 through the custom inputs; the app does not reuse the old scenario's scores.
@@ -41,17 +42,22 @@ at 100 mi2 returns 65.0 ft width and 2.79 ft depth and is retained under
 
 ## Maximum depth and the Channel Geometry tab
 
-When both network geometry sources are CHaMP, the source maximum bankfull depth
-is used. Slope-only or D84-only overrides preserve it. Any alternative regression
-or custom width/depth omits the maximum-depth argument entirely. The original
-GIFT fallback is `shape_factor = (bankfull_width / mean_bankfull_depth) / 100`.
-Factors are not capped; values outside [0, 1) are unavailable.
+The selected-segment **Maximum bankfull depth for plotting (m)** field starts
+blank. With a blank field, unchanged CHaMP width/depth uses the source maximum.
+Slope-only or D84-only edits preserve that maximum. Alternative regressions or
+edited width/depth omit maximum depth, and GIFT uses
+`shape_factor = (bankfull_width / mean_bankfull_depth) / 100`.
+
+An entered maximum depth overrides automatic behavior for that plot, regardless
+of the network regression. It must be positive and at least the mean depth.
+**Restore segment defaults** clears it and restores width, depth, slope, and D84.
+Factors are not capped; values outside [0, 1) remain unavailable.
 
 The **Channel Geometry** tab plots the exact 10,001-point cross-section grid used
 by the hydraulic simulator, with the bankfull water surface at elevation zero.
 It follows the active segment plot inputs. Axes use metres; vertical exaggeration
 is stated. This is GIFT's assumed section, not a surveyed section. Maximum depth
-shown there is the model's resulting geometry and is not an added input or cap.
+shown there is the geometry resulting from the automatic behavior or the explicit plot input.
 
 ## Selected-flow map versus mean-HSI map
 
@@ -69,10 +75,15 @@ or above bankfull. This is an average over discharge, not a time mean and not
 weighted by flow duration. Mean component suitability is reported separately;
 mean HSI is not obtained by multiplying mean components.
 
-Mean mode drives the habitat map, HSI comparisons, and network summary export.
-The inspector and gold response-plot markers continue to show selected monthly
-flows. HSI is the map metric in mean mode; switching off restores the prior
-HSI/WUA choice. Temperature and provisional priority values remain unchanged.
+Mean mode drives the habitat map, inspector, HSI comparisons, and network
+summary export. The month/range controls are disabled, and the inspector shows
+full-curve means instead of monthly flow information. HSI/WUA plots omit monthly
+markers, the inspected-month highlight, and selected-flow shading. A gold diamond
+shows the curve mean, placed at the modeled discharge-range midpoint. Its height
+is the integral mean, not necessarily the curve's value at that discharge.
+Local plot edits update this point while network means stay unchanged.
+Switching off restores monthly controls and results. HSI is the map metric in
+mean mode; switching off restores the prior HSI/WUA choice. Temperature and provisional priority values remain unchanged.
 
 ## Curve viewer and the Shiny preset
 
@@ -80,11 +91,11 @@ HSI/WUA choice. Temperature and provisional priority values remain unchanged.
 velocity, and substrate curves. It works for the supplied life stages and custom
 uploads. Substrate plots show each class interval explicitly.
 
-The requested **GIFT Shiny Default** preset loader is present, but its raw source
-values remain unverified and it is unavailable in this release. The live author's
-Shiny defaults differ from the Ptolemy example in the public R guide. No curves
-have been substituted. See `inputs/curves/SHINY_DEFAULT_SOURCE.md` for the exact
-CSV filenames needed to enable it. All existing curve options remain available.
+**GIFT Shiny Default** uses the three graph-derived CSVs supplied by the user
+on 2026-10-26. All CSV values are copied unchanged. Depth and velocity each have
+351 rows; substrate has 72 classes. The app uses the existing nearest-coordinate
+and class-lookup rules, without smoothing, rescaling, or adding endpoints.
+See `inputs/curves/SHINY_DEFAULT_SOURCE.md` and the frozen SHA-256 reference.
 
 ## Performance and exports
 
@@ -99,7 +110,8 @@ Network exports record active width/depth sources and explicitly distinguish
 selected-month medians from full-flow means. Full-flow coverage is counted in
 flow samples; monthly coverage remains counted in months. Segment CSVs record
 active sources, width, mean depth, slope, D84, shape factor, and optional maximum
-depth. Original source GeoPackages and prepared CHaMP data are unchanged.
+depth. Maximum-depth provenance identifies explicit plot values versus the
+automatic CHaMP or GIFT behavior. Original source GeoPackages and prepared CHaMP data are unchanged.
 
 ## References
 

@@ -137,7 +137,7 @@ def network_map(records, view, selected_id, basemap="Light"):
                     "style": {"backgroundColor": "#183e36", "color": "white"}})
 
 
-def flow_figure(native, monthly, months, detail_month, metric, cfs=True):
+def flow_figure(native, monthly, months, detail_month, metric, cfs=True, mean=None):
     factor, unit = (CFS_PER_M3S, "cfs") if cfs else (1.0, "m³/s")
     title = "WUA (m² per meter of reach)" if metric == "wua" else "HSI"
     fig = make_subplots(specs=[[{"secondary_y": True}]])
@@ -149,30 +149,37 @@ def flow_figure(native, monthly, months, detail_month, metric, cfs=True):
     if not native.empty:
         fig.add_trace(go.Scatter(x=native.q*factor, y=native[metric], name="WUA" if metric == "wua" else "HSI",
                                  mode="lines", line=dict(color=GREEN, width=3)), secondary_y=False)
-    points = monthly[monthly.month.isin(months) & monthly[metric].notna()]
-    if not points.empty:
-        labels = [MONTHS[int(m)-1] for m in points.month]
-        fig.add_trace(go.Scatter(x=points.q*factor, y=points[metric], text=labels, mode="markers",
-                                 name="Selected monthly flows", marker=dict(size=9, color="#d79d32",
+    if mean is None:
+        points = monthly[monthly.month.isin(months) & monthly[metric].notna()]
+        if not points.empty:
+            labels = [MONTHS[int(m)-1] for m in points.month]
+            fig.add_trace(go.Scatter(x=points.q*factor, y=points[metric], text=labels, mode="markers",
+                                     name="Selected monthly flows", marker=dict(size=9, color="#d79d32",
+                                     line=dict(color="white", width=1)),
+                                     hovertemplate=f"%{{text}}<br>Flow: %{{x:.3f}} {unit}<br>{title}: %{{y:.4f}}<extra></extra>"), secondary_y=False)
+        active = monthly[monthly.month.eq(detail_month)]
+        if not active.empty and pd.notna(active.iloc[0].q) and pd.notna(active.iloc[0][metric]):
+            row = active.iloc[0]
+            fig.add_trace(go.Scatter(x=[row.q*factor], y=[row[metric]], mode="markers", name="Inspected month",
+                                     marker=dict(size=14, symbol="circle-open", color=INK, line=dict(width=2))), secondary_y=False)
+        # Use all known selected-month flows, including unsupported flows, so the
+        # band still explains why a requested period exceeds the response curve.
+        selected_flows = monthly.loc[monthly.month.isin(months), "q"].dropna()
+        selected_flows = selected_flows[np.isfinite(selected_flows) & selected_flows.ge(0)] * factor
+        if not selected_flows.empty:
+            low, high = float(selected_flows.min()), float(selected_flows.max())
+            if low < high:
+                fig.add_vrect(x0=low, x1=high, fillcolor="rgba(215,157,50,0.10)",
+                              line_width=0, layer="below")
+            else:
+                fig.add_vline(x=low, line_color="rgba(180,133,44,0.45)",
+                              line_width=1.5, line_dash="dot", layer="below")
+    elif np.isfinite(mean.get("q", np.nan)) and np.isfinite(mean.get(metric, np.nan)):
+        fig.add_trace(go.Scatter(x=[mean["q"]*factor], y=[mean[metric]], mode="markers",
+                                 name="Full-curve mean", marker=dict(size=12, symbol="diamond", color="#d79d32",
                                  line=dict(color="white", width=1)),
-                                 hovertemplate=f"%{{text}}<br>Flow: %{{x:.3f}} {unit}<br>{title}: %{{y:.4f}}<extra></extra>"), secondary_y=False)
-    active = monthly[monthly.month.eq(detail_month)]
-    if not active.empty and pd.notna(active.iloc[0].q) and pd.notna(active.iloc[0][metric]):
-        row = active.iloc[0]
-        fig.add_trace(go.Scatter(x=[row.q*factor], y=[row[metric]], mode="markers", name="Inspected month",
-                                 marker=dict(size=14, symbol="circle-open", color=INK, line=dict(width=2))), secondary_y=False)
-    # Use all known selected-month flows, including unsupported flows, so the
-    # band still explains why a requested period exceeds the response curve.
-    selected_flows = monthly.loc[monthly.month.isin(months), "q"].dropna()
-    selected_flows = selected_flows[np.isfinite(selected_flows) & selected_flows.ge(0)] * factor
-    if not selected_flows.empty:
-        low, high = float(selected_flows.min()), float(selected_flows.max())
-        if low < high:
-            fig.add_vrect(x0=low, x1=high, fillcolor="rgba(215,157,50,0.10)",
-                          line_width=0, layer="below")
-        else:
-            fig.add_vline(x=low, line_color="rgba(180,133,44,0.45)",
-                          line_width=1.5, line_dash="dot", layer="below")
+                                 hovertemplate=f"Full-curve mean {title}: %{{y:.4f}}<br>"
+                                               f"Modeled flow midpoint: %{{x:.3f}} {unit}<extra></extra>"), secondary_y=False)
     fig.update_yaxes(title_text=title, rangemode="tozero", secondary_y=False)
     if metric == "hsi":
         fig.update_yaxes(range=[0, 1], secondary_y=False)

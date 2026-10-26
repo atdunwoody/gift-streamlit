@@ -149,6 +149,7 @@ def plot_export(frame, reach):
         "plot_bankfull_width_m": reach.get("bfWidth"),
         "plot_mean_bankfull_depth_m": reach.get("bfDepth"),
         "plot_max_bankfull_depth_m": reach.get("maxDepth"),
+        "plot_max_bankfull_depth_source": provenance.get("maximum_depth_source", ""),
         "plot_slope_m_per_m": reach.get("slope"),
         "plot_D84_mm": reach.get("d84"),
         "plot_shape_factor": reach.get("shapeUsed"),
@@ -182,10 +183,11 @@ def network_reach(reach, width_source, depth_source, region="IMP"):
 
 
 def default_overrides(reach):
-    """Independent local switches; unset values follow the active network inputs."""
+    """Track edits internally; unedited text boxes follow active network inputs."""
     return {**{f"override_{kind}": False for kind in ("width", "depth", "slope", "d84")},
             **{f"custom_{kind}": reach.get(field) for kind, field in (
-                ("width", "bfWidth"), ("depth", "bfDepth"), ("slope", "slope"), ("d84", "d84"))}}
+                ("width", "bfWidth"), ("depth", "bfDepth"), ("slope", "slope"), ("d84", "d84"))},
+            "custom_max_depth": None}
 
 
 def apply_plot_overrides(reach, choices):
@@ -202,6 +204,9 @@ def apply_plot_overrides(reach, choices):
             positive_value(adjusted.get(field), "Network "+kind)
     if "width" in active or "depth" in active:
         adjusted["maxDepth"] = None
+    if choices.get("custom_max_depth") is not None:
+        adjusted["maxDepth"] = positive_value(choices["custom_max_depth"], "Plot maximum bankfull depth")
+        active.append("maximum_depth")
     maximum = adjusted.get("maxDepth")
     original_geometry = sources["width_source"] == sources["depth_source"] == CHAMP and not (
         "width" in active or "depth" in active)
@@ -219,5 +224,7 @@ def apply_plot_overrides(reach, choices):
         depth_source=CUSTOM if "depth" in active else sources["depth_source"],
         bieger_region=sources.get("bieger_region", "IMP"), castro_jackson_region=CASTRO_REGION,
         maximum_depth_supplied=maximum is not None, custom_fields=active,
+        maximum_depth_source=(CUSTOM if "maximum_depth" in active else
+                              "CHaMP Regression" if maximum is not None else "GIFT inferred"),
         original_slope=reach.get("slope"), original_d84=reach.get("d84")))
     return adjusted

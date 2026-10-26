@@ -288,7 +288,7 @@ def network_export(features, summary, curve_id, months, metadata=None):
     full_mean = "aggregation" in summary and summary.aggregation.eq("full_curve_mean").all()
     merged["map_aggregation"] = "full_curve_mean" if full_mean else "selected_months_median"
     if full_mean:
-        return merged.drop(columns=["normalized", "validMonths"]).rename(columns={
+        return merged.drop(columns=["normalized", "validMonths", "selected_months"]).rename(columns={
             "hsi": "HSI_full_curve_mean", "wua": "WUA_full_curve_mean_m2_per_m",
             "q": "modeled_Q_midpoint_m3s", "qMin": "modeled_Q_min_m3s", "qMax": "modeled_Q_max_m3s",
             "d": "depth_suitability_full_curve_mean", "v": "velocity_suitability_full_curve_mean",
