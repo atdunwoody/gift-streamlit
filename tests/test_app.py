@@ -64,7 +64,7 @@ def test_default_and_life_stage_controls():
     assert not at.exception
     assert at.selectbox(key="inspect_month").options == ["November","December","January","February"]
     at.checkbox(key="require_all").uncheck().run()
-    at.radio(key="network_layer").set_value("Temperature").run()
+    at.radio(key="network_layer").set_value("Temperature Suitability").run()
     at.selectbox(key="map_metric").set_value("wua").run()
     at.selectbox(key="basemap").set_value("Satellite").run()
     at.radio(key="flow_units").set_value("cfs").run()
@@ -135,23 +135,23 @@ def test_only_open_plot_tabs_and_result_table_are_rendered():
     assert any(k.endswith("-flow-wua") for k in keys)
     assert not any(k.endswith("-flow-hsi") for k in keys)
     assert any(k.endswith("-comparison-Temperature suitability") for k in keys)
-    assert not any(k.endswith("-comparison-Combined priority") for k in keys)
+    assert not any(k.endswith("-comparison-Provisional Model priority") for k in keys)
     assert not any(b.proto.label == "Download monthly results (SI units)" for b in at.get("download_button"))
     at.session_state.flow_tabs = "HSI"
-    at.session_state.comparison_tabs = "Combined priority"
+    at.session_state.comparison_tabs = "Provisional Model priority"
     at.session_state.monthly_results = True
     at.run()
     assert not at.exception
     keys = [p.proto.id for p in at.get("plotly_chart")]
     assert any(k.endswith("-flow-hsi") for k in keys)
     assert not any(k.endswith("-flow-wua") for k in keys)
-    assert any(k.endswith("-comparison-Combined priority") for k in keys)
+    assert any(k.endswith("-comparison-Provisional Model priority") for k in keys)
     assert not any(k.endswith("-comparison-Temperature suitability") for k in keys)
     assert any(b.proto.label == "Download monthly results (SI units)" for b in at.get("download_button"))
     send_map_selection(at, 23428390)
     assert not at.exception
     assert at.session_state.flow_tabs == "HSI"
-    assert at.session_state.comparison_tabs == "Combined priority"
+    assert at.session_state.comparison_tabs == "Provisional Model priority"
 
 
 def test_requested_controls_and_missing_input_diagnostics():
@@ -171,7 +171,7 @@ def test_requested_controls_and_missing_input_diagnostics():
 def test_click_each_comparison_updates_map_and_inspector():
     at = AppTest.from_file(ROOT / "app.py", default_timeout=30).run()
     assert not at.exception
-    for comparison in ("Temperature suitability", "Combined priority", "Depth suitability", "Velocity suitability"):
+    for comparison in ("Temperature suitability", "Provisional Model priority", "Depth suitability", "Velocity suitability"):
         at.session_state.comparison_tabs = comparison
         at.run()
         assert not at.exception

@@ -1,5 +1,35 @@
 # Validation record
 
+## Network scenarios and plot options, 2026-10-26
+
+**124 tests passed:** the full 122-test suite passed in 122.16 seconds, followed
+by two additional preset-source checks. A final targeted rerun also verifies
+that mean mode restores the previous HSI/WUA selection when switched off.
+The suite covers independent network regressions, physical-cache reuse across
+life stages, map isolation from all four local overrides, per-COMID persistence,
+D84 resistance and substrate effects, missing-geometry recovery, full-flow mean
+integration and sampling convergence, matching map/legend temperature stops,
+new labels, collapsed above-bankfull diagnostics, the curve dialog, and the
+exact modeled cross-section grid. The original frozen-R checks still pass.
+
+The original GIFT model files, input GeoPackages, and prepared CHaMP data are
+byte-for-byte unchanged. No dependencies or online calls were added to the app.
+
+A fresh local AppTest process initialized in **3.311 seconds including imports**;
+app execution took 2.014 seconds and performed **zero hydraulic solves**. A
+cached rerun took 0.188 seconds. One alternative geometry (Bieger 2015 National
+width / Regional depth) solved all 728 reaches in 3.594 seconds; its first
+201-sample full-flow summary took 20.427 seconds. The latter tasks run only
+when requested and are cached independently of the selected month period.
+These are local backend timings, not deployment, browser, or concurrency tests.
+
+**Outstanding source data:** the named GIFT Shiny Default preset loader is
+implemented, but no raw live-Shiny default curves could be verified. The live
+curves differ from the published R-guide Ptolemy example. This preset remains
+explicitly unavailable until verified source CSVs are supplied; no different
+curves were relabeled as Shiny defaults. See
+`inputs/curves/SHINY_DEFAULT_SOURCE.md`. All other curve options are operational.
+
 ## Selected-segment hydraulic options, 2026-10-25
 
 `python -m pytest -q` passed **96 tests** in the updated app package. The 14 new

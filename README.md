@@ -34,7 +34,7 @@ needed by the running app.
    launcher uses that interpreter, starts Streamlit, and opens
    **http://localhost:8501**. Stop the terminal with **Ctrl+C**.
 
-The prepared monthly overview is included. Startup loads it and displays the map
+The prepared monthly overview is included. Default CHaMP startup loads it and displays the map
 without computing any native hydraulic curves. Select a stream segment or a
 comparison point to calculate that segment's hydraulic and habitat flow-response
 curves. A bounded server cache reuses the physical solution across repeat clicks,
@@ -85,14 +85,20 @@ the cached hydraulics and evaluate habitat; repeat selections reuse both caches.
 
 ## Features
 
-- Independent bankfull width and mean-depth choices for the selected segment's
-  plots: CHaMP Regression, Bieger National, Bieger Regional, Castro and Jackson
-  2001, or custom values. Slope is editable separately. Choices persist by
-  segment in the current session, with a Reset plot inputs button.
-- Alternative or custom width/depth omits maximum bankfull depth. GIFT then
-  estimates shape factor from width/mean depth/100. The network map, inspector,
-  and comparison scores continue to use the default CHaMP Regression inputs.
-  See `HYDRAULIC_OPTIONS.md` for equations, units, and the plot-only scope.
+- Independent network bankfull width and mean-depth regressions: CHaMP Regression,
+  Bieger 2015 National, Bieger 2015 Regional, and Castro and Jackson 2001.
+  Selections apply to all segments, the inspector, comparison plots, and exports.
+- Per-segment width, mean depth, slope, and D84 overrides apply only to response
+  plots, the channel cross section, and selected-segment downloads. Choices
+  persist by segment; Reset plot inputs restores the active network geometry.
+- Alternative or custom width/depth omits maximum bankfull depth. GIFT uses
+  width/mean depth/100 for shape. Slope-only and D84-only overrides preserve
+  maximum depth when the network geometry is entirely CHaMP.
+  See `HYDRAULIC_OPTIONS.md` for equations, units, scope, and averaging.
+- A mean-HSI on/off switch, off by default. The default map uses median habitat
+  at selected monthly flows. Mean mode averages each segment's entire modeled
+  flow-response curve over discharge using 201 equally spaced flow samples.
+  It is not a temporal or flow-duration-weighted average.
 - Clickable stream segments with raw mean depth, mean velocity, predicted D84,
   component suitability, HSI, WUA, temperature score, and priority score.
 - Select reaches on the map or by clicking a comparison-plot point. Plot
@@ -102,10 +108,11 @@ the cached hydraulics and evaluate habitat; repeat selections reuse both caches.
   their provider availability is separate from the habitat calculations.
 - Single months and inclusive month ranges, including ranges across December.
 - Species/life-stage defaults and a reset button.
-- WUA and HSI plot tabs below the map, with subtle depth/velocity suitability
+- WUA, HSI, and Channel Geometry tabs below the map, with depth/velocity suitability
   curves on the secondary axis and separately evaluated monthly flow markers.
-- Network toggles for GIFT habitat, temperature suitability, and combined priority.
-- Four selectable scatterplots: HSI versus temperature suitability, combined
+- Network layers: GIFT habitat, Temperature Suitability, and Provisional Priority.
+  Temperature colors place tan at 80% of the observed maximum, with matching legend stops.
+- Four selectable scatterplots: HSI versus temperature suitability, Provisional Model
   priority, depth suitability, and velocity suitability. The y axis starts at
   zero and extends 5% above the highest plotted HSI. Zero-only and empty plots
   use a nonzero fallback range.
@@ -114,8 +121,11 @@ the cached hydraulics and evaluate habitat; repeat selections reuse both caches.
 - Unavailable-result diagnostics show the prepared GIFT geometry, shape factor,
   modeled flow bounds, curve ranges, monthly inputs, and availability reasons.
   A JSON download retains full input values and the active curves in SI units.
-- Three-file custom suitability uploads, curve previews, and downloadable CSV
-  examples. Uploads are session-specific. Restarting the server clears them.
+  Diagnostics start collapsed when a selected flow exceeds bankfull.
+- Three-file custom suitability uploads, a sidebar View Suitability Curves popup,
+  and downloadable CSV examples. Uploads are session-specific. Restarting the
+  server clears them. The GIFT Shiny Default loader requires verified source
+  CSVs; see `inputs/curves/SHINY_DEFAULT_SOURCE.md` for the outstanding data need.
 - Downloads of the network period summary, selected segment's exact monthly
   results, and its native flow-response curve. CSV exports retain SI units
   regardless of the displayed flow units.
@@ -169,7 +179,7 @@ set the months appropriate to the uploaded curves.
 - EROM flows are gage-adjusted **1971–2000 monthly climatology**, not current
   observations. Represented alterations and gage corrections are included;
   diversions are incompletely accounted for.
-- Shape factor is `1 - mean bankfull depth / joined maximum depth`, without
+- For CHaMP geometry, shape factor is `1 - mean bankfull depth / joined maximum depth`, without
   capping. All 166 factors above 0.7 in the current inputs are retained in the
   overview and selected-segment calculations. Factors must be in [0, 1).
 - Original GIFT equations and 121-bin distribution calculations are retained
@@ -320,7 +330,14 @@ it does not read, validate, or rebuild the 727 native hydraulic files. No segmen
 is selected automatically. Selecting a segment computes its 981 native hydraulic
 levels, then evaluates its monthly results and habitat response.
 
-Physical solutions use a bounded 256-entry cache keyed by segment, hydraulic
+Alternative network regressions are computed only when selected and cached as
+two network physical scenarios. Full-flow means have a separate bounded cache
+keyed by geometry and the active suitability curves. Neither calculation runs
+at default startup. Local tests on the supplied 728 reaches took 3.6 seconds
+for one alternative geometry and 20.4 seconds for its first full-flow mean;
+these exclude hosting/build and browser rendering.
+
+Selected physical solutions use a bounded 256-entry cache keyed by segment, hydraulic
 inputs, and calculation code. Habitat response curves and selected monthly
 results have their own bounded caches. Changing a life stage, assessment period,
 or display units reuses the physical solution. Changing physical inputs invalidates

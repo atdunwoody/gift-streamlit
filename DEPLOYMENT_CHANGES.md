@@ -1,3 +1,12 @@
+# Network options update, 2026-10-26
+
+Default CHaMP startup still uses the bundled overview without hydraulic solves.
+Alternative network regressions and full-flow averaging now calculate all
+segments only when selected, with separate bounded physical and habitat caches.
+Local overrides remain segment-only. Dependencies and hosting configuration
+are unchanged. See `HYDRAULIC_OPTIONS.md` and `VALIDATION.md` for details,
+performance measurements, and the outstanding Shiny-default curve source.
+
 # On-demand hydraulic curves
 
 This is the complete updated application, including the earlier deployment fixes.

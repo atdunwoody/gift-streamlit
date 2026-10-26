@@ -94,62 +94,68 @@ def test_invalid_shape_and_export_provenance(reach):
     assert result.plot_slope_m_per_m.iloc[0] == reach["slope"]
 
 
-def test_ui_independent_regressions_cache_and_network_isolation(counted_solves):
+def test_ui_network_regressions_apply_to_every_reach_and_reuse_physics(counted_solves, monkeypatch):
+    import runtime_data
+    network, curves = engine.load_dataset(ROOT / "data")
+    ids = {23428544, 23428378}
+    network = dict(network, features=[r for r in network["features"] if r["id"] in ids])
+    monkeypatch.setattr(runtime_data, "load_runtime_dataset", lambda config: (copy.deepcopy(network), curves))
     at = AppTest.from_file(ROOT / "app.py", default_timeout=30).run()
     assert not at.exception and counted_solves == []
-    send_map_selection(at, 23428544)
-    assert len(counted_solves) == 1
-    before_map = at.get("deck_gl_json_chart")[0].proto.json
-    width_key, depth_key = "plot-23428544-width_source", "plot-23428544-depth_source"
-    assert at.selectbox(key=width_key).options == list(BANKFULL_OPTIONS)
-    assert at.selectbox(key=depth_key).value == CHAMP
-    at.selectbox(key=depth_key).set_value(BIEGER_NATIONAL).run()
+    assert at.selectbox(key="network_width_source").value == CHAMP
+    at.selectbox(key="network_depth_source").set_value(BIEGER_NATIONAL).run()
     assert not at.exception and not at.error
-    assert at.selectbox(key=width_key).value == CHAMP
     assert len(counted_solves) == 2
-    assert "max_bankfull_depth" not in counted_solves[-1][1]
-    at.selectbox(key=width_key).set_value(CASTRO_JACKSON).run()
-    assert not at.exception and not at.error
-    assert at.selectbox(key=depth_key).value == BIEGER_NATIONAL
-    assert len(counted_solves) == 3
-    assert at.get("deck_gl_json_chart")[0].proto.json == before_map
-    at.run()
-    assert len(counted_solves) == 3
-    at.button(key="reset-plot-23428544").click().run()
-    assert not at.exception and not at.error
-    assert at.selectbox(key=width_key).value == at.selectbox(key=depth_key).value == CHAMP
-    assert len(counted_solves) == 3  # Original physical solution is reused.
+    for args, kwargs in counted_solves:
+        assert "max_bankfull_depth" not in kwargs
+        assert any(args[2] == pytest.approx(predict_bankfull(r["da"], "depth", BIEGER_NATIONAL))
+                   for r in network["features"])
+    at.selectbox(key="stage").set_value("steelhead_spawning").run()
+    assert len(counted_solves) == 2
+    at.selectbox(key="network_width_source").set_value(CASTRO_JACKSON).run()
+    assert not at.exception and len(counted_solves) == 4
+    for args, kwargs in counted_solves[-2:]:
+        assert any(args[1] == pytest.approx(predict_bankfull(r["da"], "width", CASTRO_JACKSON))
+                   for r in network["features"])
+    at.selectbox(key="network_width_source").set_value(CHAMP).run()
+    assert len(counted_solves) == 4
 
 
-def test_ui_custom_inputs_persist_by_segment_and_recover_from_invalid_values():
-    st.cache_data.clear()
+def test_ui_custom_inputs_persist_and_never_change_network_map(counted_solves):
     at = AppTest.from_file(ROOT / "app.py", default_timeout=30).run()
     send_map_selection(at, 23428544)
-    at.selectbox(key="plot-23428544-depth_source").set_value(CUSTOM).run()
+    before_map = at.get("deck_gl_json_chart")[0].proto.json
+    for kind, value in (("depth", .9), ("width", 35.), ("slope", .005), ("d84", 90.)):
+        at.toggle(key=f"plot-23428544-override_{kind}").set_value(True).run()
+        at.number_input(key=f"plot-23428544-custom_{kind}").set_value(value).run()
+        assert not at.exception and not at.error
+    assert at.get("deck_gl_json_chart")[0].proto.json == before_map
+    assert counted_solves[-1][0][-1] == 90.
+    assert counted_solves[-1][0][0] == .005
+    assert "max_bankfull_depth" not in counted_solves[-1][1]
+    send_map_selection(at, 23428378)
+    assert not at.toggle(key="plot-23428378-override_depth").value
+    send_map_selection(at, 23428544)
+    for kind, value in (("depth", .9), ("width", 35.), ("slope", .005), ("d84", 90.)):
+        assert at.toggle(key=f"plot-23428544-override_{kind}").value
+        assert at.number_input(key=f"plot-23428544-custom_{kind}").value == value
     at.number_input(key="plot-23428544-custom_depth").set_value(.001).run()
     assert not at.exception and any("shape factor" in r.value for r in at.error)
-    at.number_input(key="plot-23428544-custom_depth").set_value(.9).run()
-    at.selectbox(key="plot-23428544-width_source").set_value(CUSTOM).run()
-    at.number_input(key="plot-23428544-custom_width").set_value(35.).run()
-    at.number_input(key="plot-23428544-slope").set_value(.005).run()
-    assert not at.exception and not at.error
-    send_map_selection(at, 23428378)
-    assert at.selectbox(key="plot-23428378-depth_source").value == CHAMP
-    send_map_selection(at, 23428544)
-    assert at.selectbox(key="plot-23428544-depth_source").value == CUSTOM
-    assert at.selectbox(key="plot-23428544-width_source").value == CUSTOM
-    assert at.number_input(key="plot-23428544-custom_depth").value == .9
-    assert at.number_input(key="plot-23428544-custom_width").value == 35.
-    assert at.number_input(key="plot-23428544-slope").value == .005
+    before_reset = len(counted_solves)
     at.button(key="reset-plot-23428544").click().run()
-    assert at.number_input(key="plot-23428544-slope").value == pytest.approx(.00375506)
+    assert not at.exception and not at.error
+    assert not at.toggle(key="plot-23428544-override_depth").value
+    assert len(counted_solves) == before_reset  # Original solution is reused.
 
 
-def test_ui_regressions_can_supply_missing_champ_dimensions():
+def test_ui_custom_dimensions_can_supply_missing_champ_inputs():
     st.cache_data.clear()
     at = AppTest.from_file(ROOT / "app.py", default_timeout=30).run()
     send_map_selection(at, 23429096)
-    at.selectbox(key="plot-23429096-width_source").set_value(BIEGER_NATIONAL).run()
-    at.selectbox(key="plot-23429096-depth_source").set_value(BIEGER_NATIONAL).run()
+    for kind, value in (("width", 4.), ("depth", .3)):
+        at.toggle(key=f"plot-23429096-override_{kind}").set_value(True).run()
+        at.number_input(key=f"plot-23429096-custom_{kind}").set_value(value).run()
     assert not at.exception and not at.error
     assert any(p.proto.id.endswith("-flow-wua") for p in at.get("plotly_chart"))
+
+

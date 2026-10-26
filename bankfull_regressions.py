@@ -11,11 +11,12 @@ from __future__ import annotations
 import math
 
 CHAMP = "CHaMP Regression"
-BIEGER_NATIONAL = "Bieger National"
-BIEGER_REGIONAL = "Bieger Regional"
+BIEGER_NATIONAL = "Bieger 2015 National"
+BIEGER_REGIONAL = "Bieger 2015 Regional"
 CASTRO_JACKSON = "Castro and Jackson 2001"
 CUSTOM = "Custom value"
 BANKFULL_OPTIONS = (CHAMP, BIEGER_NATIONAL, BIEGER_REGIONAL, CASTRO_JACKSON, CUSTOM)
+NETWORK_BANKFULL_OPTIONS = BANKFULL_OPTIONS[:-1]
 
 BIEGER_REGIONS = {
     "LUP": ("Laurentian Upland", (4.15, .308), (.31, .202), (43., 948.)),
@@ -118,11 +119,11 @@ def regression_notes(reach, choices, region="IMP"):
         source = choices[kind+"_source"]
         if source == BIEGER_NATIONAL:
             a, b = NATIONAL_COEFFICIENTS[kind]
-            notes.append(f"{kind.capitalize()}: Bieger National = {a:g} × DA^{b:g}; m and km².")
+            notes.append(f"{kind.capitalize()}: Bieger 2015 National = {a:g} × DA^{b:g}; m and km².")
         elif source == BIEGER_REGIONAL:
             name, width, depth, limits = BIEGER_REGIONS[region]
             a, b = width if kind == "width" else depth
-            notes.append(f"{kind.capitalize()}: Bieger Regional ({name}) = {a:g} × DA^{b:g}; m and km².")
+            notes.append(f"{kind.capitalize()}: Bieger 2015 Regional ({name}) = {a:g} × DA^{b:g}; m and km².")
             area = reach.get("da")
             if area is not None and math.isfinite(area) and not limits[0] <= area <= limits[1]:
                 notes.append(f"The regional estimate is outside the published drainage-area range "
@@ -149,9 +150,74 @@ def plot_export(frame, reach):
         "plot_mean_bankfull_depth_m": reach.get("bfDepth"),
         "plot_max_bankfull_depth_m": reach.get("maxDepth"),
         "plot_slope_m_per_m": reach.get("slope"),
+        "plot_D84_mm": reach.get("d84"),
         "plot_shape_factor": reach.get("shapeUsed"),
         "plot_bieger_region": provenance.get("bieger_region", ""),
         "plot_castro_jackson_region": provenance.get("castro_jackson_region", ""),
     }.items():
         result[column] = value
     return result
+
+
+def network_reach(reach, width_source, depth_source, region="IMP"):
+    """Resolve network geometry, keeping invalid reaches explicitly unavailable."""
+    if width_source not in NETWORK_BANKFULL_OPTIONS or depth_source not in NETWORK_BANKFULL_OPTIONS:
+        raise ValueError("Network geometry requires a bankfull regression.")
+    resolved = dict(reach, networkInputs=dict(width_source=width_source, depth_source=depth_source,
+                                             bieger_region=region))
+    errors = []
+    for kind, field, source in (("width", "bfWidth", width_source), ("depth", "bfDepth", depth_source)):
+        try:
+            resolved[field] = (reach.get(field) if source == CHAMP else
+                               predict_bankfull(reach.get("da"), kind, source, region))
+            positive_value(resolved[field], "Bankfull "+kind)
+        except ValueError as exc:
+            resolved[field] = None
+            errors.append(str(exc))
+    if width_source != CHAMP or depth_source != CHAMP:
+        resolved["maxDepth"] = None
+    if errors:
+        resolved["scenarioError"] = " ".join(errors)
+    return resolved
+
+
+def default_overrides(reach):
+    """Independent local switches; unset values follow the active network inputs."""
+    return {**{f"override_{kind}": False for kind in ("width", "depth", "slope", "d84")},
+            **{f"custom_{kind}": reach.get(field) for kind, field in (
+                ("width", "bfWidth"), ("depth", "bfDepth"), ("slope", "slope"), ("d84", "d84"))}}
+
+
+def apply_plot_overrides(reach, choices):
+    """Copy the network scenario and apply only this segment's explicit overrides."""
+    adjusted = dict(reach)
+    sources = reach.get("networkInputs", dict(width_source=CHAMP, depth_source=CHAMP,
+                                              bieger_region="IMP"))
+    active = []
+    for kind, field in (("width", "bfWidth"), ("depth", "bfDepth"), ("slope", "slope"), ("d84", "d84")):
+        if choices.get("override_"+kind, False):
+            adjusted[field] = positive_value(choices.get("custom_"+kind), "Plot "+kind)
+            active.append(kind)
+        else:
+            positive_value(adjusted.get(field), "Network "+kind)
+    if "width" in active or "depth" in active:
+        adjusted["maxDepth"] = None
+    maximum = adjusted.get("maxDepth")
+    original_geometry = sources["width_source"] == sources["depth_source"] == CHAMP and not (
+        "width" in active or "depth" in active)
+    if original_geometry:
+        maximum = positive_value(maximum, "Maximum bankfull depth")
+    if maximum is not None and maximum < adjusted["bfDepth"]:
+        raise ValueError("Maximum bankfull depth is below mean bankfull depth.")
+    shape = (1-adjusted["bfDepth"]/maximum if maximum is not None else
+             adjusted["bfWidth"]/adjusted["bfDepth"]/100.)
+    if not 0 <= shape < 1:
+        raise ValueError("GIFT's width/depth shape factor must be below 1. "
+                         "Increase mean depth or reduce bankfull width for this plot.")
+    adjusted.update(plotInputs=dict(
+        width_source=CUSTOM if "width" in active else sources["width_source"],
+        depth_source=CUSTOM if "depth" in active else sources["depth_source"],
+        bieger_region=sources.get("bieger_region", "IMP"), castro_jackson_region=CASTRO_REGION,
+        maximum_depth_supplied=maximum is not None, custom_fields=active,
+        original_slope=reach.get("slope"), original_d84=reach.get("d84")))
+    return adjusted

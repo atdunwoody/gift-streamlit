@@ -15,11 +15,14 @@ from habitat_engine import CFS_PER_M3S, MONTHS, MONTH_ABBR, STATUS_LABELS
 GREEN = "#186354"
 INK = "#183e36"
 PALETTE = [[233, 241, 219], [157, 206, 170], [68, 151, 121], [20, 94, 78], [8, 52, 45]]
-TEMP_PALETTE = [[242, 225, 190], [157, 205, 197], [52, 142, 169], [23, 80, 126]]
+TEMP_PALETTE = [[151, 102, 58], [216, 182, 137], [242, 225, 190],
+                [157, 205, 197], [52, 142, 169], [23, 80, 126]]
+# Put tan at 80% of the observed maximum, separating the numerous high scores.
+TEMP_STOPS = [0., .60, .80, .90, .96, 1.]
 PRIORITY_PALETTE = [[241, 229, 211], [222, 176, 125], [197, 117, 69], [142, 64, 37]]
 COMPARISON_FIELDS = {
     "Temperature suitability": ("feature", "temp"),
-    "Combined priority": ("feature", "priority"),
+    "Provisional Model priority": ("feature", "priority"),
     "Depth suitability": ("summary", "d"),
     "Velocity suitability": ("summary", "v"),
 }
@@ -41,12 +44,12 @@ def period_label(months):
 
 
 def metric_scale(features, summary, layer, metric):
-    if layer == "Temperature":
+    if layer in ("Temperature", "Temperature Suitability"):
         values = [r["temp"] for r in features]
         title, palette = "Temperature suitability", TEMP_PALETTE
-    elif layer == "Priority":
+    elif layer in ("Priority", "Provisional Priority"):
         values = [r["priority"] for r in features]
-        title, palette = "Combined priority score", PRIORITY_PALETTE
+        title, palette = "Provisional Model priority", PRIORITY_PALETTE
     else:
         values = summary[metric].tolist()
         title, palette = {"hsi": "HSI", "wua": "WUA (m²/m)"}[metric], PALETTE
@@ -58,9 +61,9 @@ def metric_scale(features, summary, layer, metric):
 def potential_maximum_note(layer, metric):
     """Keep observed color limits separate from theoretical score limits."""
     prefix = "Colors span 0 to the maximum observed value for this map. "
-    if layer == "Priority":
+    if layer in ("Priority", "Provisional Priority"):
         return prefix + "A potential maximum is not specified for the supplied priority score."
-    if layer == "Temperature" or metric == "hsi":
+    if layer in ("Temperature", "Temperature Suitability") or metric == "hsi":
         return prefix + "Potential maximum: 1."
     return prefix + "Potential maximum WUA equals wetted width when HSI = 1; it varies by reach and flow."
 
@@ -68,10 +71,16 @@ def potential_maximum_note(layer, metric):
 def rgb(value, high, palette):
     if value is None or not np.isfinite(value):
         return [157, 162, 159, 165]
-    point = np.clip(value / high if high > 0 else 0.0, 0, 1) * (len(palette) - 1)
-    low = min(int(point), len(palette) - 2)
-    a, b = np.array(palette[low]), np.array(palette[low + 1])
-    return [*np.round(a + (b-a) * (point-low)).astype(int).tolist(), 245]
+    point = np.clip(value / high if high > 0 else 0.0, 0, 1)
+    stops = TEMP_STOPS if palette == TEMP_PALETTE else np.linspace(0, 1, len(palette))
+    colors = np.asarray(palette)
+    return [*[int(round(np.interp(point, stops, colors[:, i]))) for i in range(3)], 245]
+
+
+def legend_gradient(palette):
+    stops = TEMP_STOPS if palette == TEMP_PALETTE else np.linspace(0, 1, len(palette))
+    return ",".join("rgb("+",".join(map(str, color))+f") {stop*100:g}%"
+                    for color, stop in zip(palette, stops))
 
 
 def map_records(features, summary, layer, metric, high, palette):
@@ -79,12 +88,14 @@ def map_records(features, summary, layer, metric, high, palette):
     rows = summary.to_dict(orient="index")
     for r in features:
         row = rows[r["id"]]
-        value = r["temp"] if layer == "Temperature" else r["priority"] if layer == "Priority" else row[metric]
+        value = (r["temp"] if layer in ("Temperature", "Temperature Suitability") else
+                 r["priority"] if layer in ("Priority", "Provisional Priority") else row[metric])
         color = rgb(value, high, palette)
         for path in r["coords"]:
             records.append(dict(comid=r["id"], name=html.escape(r["name"]), path=path,
                                 color=color, value=number(value),
-                                coverage=f"{int(row['validCount'])}/{int(row['selectedCount'])} months",
+                                coverage=f"{int(row['validCount'])}/{int(row['selectedCount'])} " +
+                                         ("modeled flows" if row.get("aggregation") == "full_curve_mean" else "months"),
                                 status=html.escape(STATUS_LABELS.get(row["status"], row["status"]))))
     return records
 
@@ -169,6 +180,50 @@ def flow_figure(native, monthly, months, detail_month, metric, cfs=True):
     fig.update_xaxes(title_text=f"Flow ({unit})", rangemode="tozero")
     fig.update_layout(height=370, template="plotly_white", margin=dict(l=15,r=15,t=20,b=15),
                       legend=dict(orientation="h", y=1.18, x=0), hovermode="x unified", font=dict(color=INK))
+    return fig
+
+
+def channel_geometry_figure(reach):
+    """Plot the exact cross-section grid used by the GIFT hydraulic simulator."""
+    from gift_habitat.hydraulics import _cross_section_grid, _shape_factor
+
+    width, depth = reach["bfWidth"], reach["bfDepth"]
+    shape = _shape_factor(width, depth, reach.get("maxDepth"), None)
+    x, y, maximum = _cross_section_grid(width, depth, shape)
+    y = y - 5*depth  # Bankfull water surface is the zero datum.
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=x, y=y, mode="lines", name="GIFT channel bed",
+                             line=dict(color="#85633f", width=3),
+                             hovertemplate="Offset: %{x:.3f} m<br>Elevation: %{y:.3f} m<extra></extra>"))
+    fig.add_trace(go.Scatter(x=[0, width], y=[0, 0], mode="lines", name="Bankfull water surface",
+                             line=dict(color="#347ea9", width=2, dash="dash")))
+    fig.update_layout(template="plotly_white", height=390,
+                      margin=dict(l=20, r=15, t=20, b=20),
+                      xaxis_title="Cross-channel offset (m)",
+                      yaxis_title="Elevation relative to bankfull (m)",
+                      legend=dict(orientation="h", y=1.16), font=dict(color=INK))
+    fig.update_xaxes(range=[-.02*width, 1.02*width])
+    fig.update_yaxes(range=[-1.05*maximum, .10*maximum])
+    return fig
+
+
+def suitability_figure(curve, kind):
+    """Display continuous coordinates or exact substrate class intervals."""
+    values = np.asarray(curve[kind], dtype=float)
+    if kind == "substrate":
+        x, y = [], []
+        for low, high, score in values:
+            x.extend([low, high, None])
+            y.extend([score, score, None])
+        title = "Substrate size (mm)"
+    else:
+        x, y = values[:, 0], values[:, 1]
+        title = "Depth (m)" if kind == "depth" else "Velocity (m/s)"
+    fig = go.Figure(go.Scatter(x=x, y=y, mode="lines", line=dict(color=GREEN, width=2),
+                              name=kind.capitalize()))
+    fig.update_layout(template="plotly_white", height=260, title=kind.capitalize()+" suitability",
+                      margin=dict(l=10, r=10, t=40, b=10), xaxis_title=title,
+                      yaxis_title="Suitability", yaxis_range=[0, 1.05])
     return fig
 
 

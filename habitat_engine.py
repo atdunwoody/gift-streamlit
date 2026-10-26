@@ -270,6 +270,9 @@ def network_export(features, summary, curve_id, months, metadata=None):
                              currTempScoreKSee=r["temp"], **{"High priority combined": r["priority"]},
                              bf_width_pred_m=r["bfWidth"], bf_depth_pred_m=r["bfDepth"],
                              joined_bf_depth_max_pred_m=r["maxDepth"], D84_pred_mm=r["d84"],
+                             slope_m_per_m=r["slope"],
+                             bankfull_width_source=r.get("networkInputs", {}).get("width_source", "CHaMP Regression"),
+                             bankfull_depth_source=r.get("networkInputs", {}).get("depth_source", "CHaMP Regression"),
                              shape_factor_used=r.get("shapeUsed")) for r in features])
     merged = base.merge(summary.rename_axis("COMID").reset_index(), on="COMID", validate="one_to_one")
     merged["curve_set"] = curve_id
@@ -282,6 +285,16 @@ def network_export(features, summary, curve_id, months, metadata=None):
     for key, label in (("bankfull_width", "bankfull_width_field"), ("bankfull_depth", "bankfull_depth_field"),
                        ("slope", "slope_field"), ("d84", "d84_field")):
         merged[label] = metadata.get("networkFields", {}).get(key, "")
+    full_mean = "aggregation" in summary and summary.aggregation.eq("full_curve_mean").all()
+    merged["map_aggregation"] = "full_curve_mean" if full_mean else "selected_months_median"
+    if full_mean:
+        return merged.drop(columns=["normalized", "validMonths"]).rename(columns={
+            "hsi": "HSI_full_curve_mean", "wua": "WUA_full_curve_mean_m2_per_m",
+            "q": "modeled_Q_midpoint_m3s", "qMin": "modeled_Q_min_m3s", "qMax": "modeled_Q_max_m3s",
+            "d": "depth_suitability_full_curve_mean", "v": "velocity_suitability_full_curve_mean",
+            "s": "substrate_suitability", "depth": "depth_full_curve_mean_m",
+            "velocity": "velocity_full_curve_mean_m_s", "width": "width_full_curve_mean_m",
+            "validCount": "valid_flow_samples", "selectedCount": "flow_samples"})
     return merged.drop(columns=["normalized"]).rename(columns={"hsi": "HSI_median", "wua": "WUA_median_m2_per_m",
                                   "q": "EROM_Q_median_m3s",
                                   "qMin": "EROM_Q_min_m3s", "qMax": "EROM_Q_max_m3s",

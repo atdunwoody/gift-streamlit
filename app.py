@@ -12,15 +12,18 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from bankfull_regressions import (BANKFULL_OPTIONS, CHAMP, CUSTOM, default_plot_settings,
-                                 plot_export, plot_reach, regression_notes)
+from bankfull_regressions import (CHAMP, NETWORK_BANKFULL_OPTIONS, apply_plot_overrides,
+                                 default_overrides, plot_export, regression_notes)
+from curve_presets import gift_shiny_default
 from habitat_engine import (CFS_PER_M3S, MONTHS, STATUS_LABELS, aggregate_period,
                             calculate_hydraulics, compute_monthly, curve_from_csvs, gift_diagnostics,
                             hydraulic_parameters, input_source_rows, reach_with_hydraulics,
                             month_range, native_habitat, network_export, selected_comid,
                             selected_plotly_comid)
-from presentation import (COMPARISON_FIELDS, comparison_figure, flow_figure, map_records, map_view,
-                          metric_scale, network_map, number, period_label, potential_maximum_note)
+from presentation import (COMPARISON_FIELDS, channel_geometry_figure, comparison_figure,
+                          flow_figure, legend_gradient, map_records, map_view, metric_scale,
+                          network_map, number, period_label, potential_maximum_note, suitability_figure)
+from network_scenarios import build_network_solution, full_curve_summary
 from prepare_data import load_settings
 from runtime_data import hydraulic_model_signature, load_runtime_dataset, runtime_signature
 
@@ -41,9 +44,31 @@ def cached_data(signature):
 
 
 @st.cache_data(show_spinner=False, max_entries=12)
-def cached_monthly(curve_json, signature):
-    network, _ = cached_data(signature)
+def cached_monthly(curve_json, signature, full_network=False):
+    network = (cached_network_solution(signature)[0] if full_network else cached_geometry(signature))
     return compute_monthly(network["features"], json.loads(curve_json))
+
+
+@st.cache_data(show_spinner=False, max_entries=2)
+def cached_network_solution(signature):
+    sources, width_source, depth_source, region, model_signature = signature
+    network, _ = cached_data(sources)
+    return build_network_solution(network, width_source, depth_source, region)
+
+
+@st.cache_data(show_spinner=False, max_entries=4)
+def cached_geometry(signature):
+    sources, width_source, depth_source, region, model_signature = signature
+    if width_source == depth_source == CHAMP:
+        network, _ = cached_data(sources)
+        return network
+    return cached_network_solution(signature)[0]
+
+
+@st.cache_data(show_spinner=False, max_entries=12)
+def cached_full_curve_summary(curve_json, signature):
+    network, physical = cached_network_solution(signature)
+    return full_curve_summary(network, physical, json.loads(curve_json))
 
 
 @st.cache_data(show_spinner=False, max_entries=256)
@@ -136,6 +161,17 @@ def stage_changed(curves):
     apply_defaults(active_curve(curves))
 
 
+@st.dialog("Suitability Curves", width="large")
+def show_suitability_curves(curve):
+    st.markdown(f"**{curve['label']}**")
+    if curve.get("curveNote"):
+        st.caption(curve["curveNote"])
+    for kind in ("depth", "velocity", "substrate"):
+        st.plotly_chart(suitability_figure(curve, kind), width="stretch", key=f"dialog-{kind}")
+    st.caption("Depth and velocity use GIFT's nearest-coordinate lookup. Substrate classes include "
+               "their lower bound and exclude their upper bound.")
+
+
 def map_selected(key, allowed):
     comid = selected_comid(st.session_state.get(key, {}), allowed)
     if comid is not None and comid != st.session_state.get("selected_id"):
@@ -170,9 +206,19 @@ def sidebar(curves):
         options = {c["id"]: c["label"] for c in curves}
         if "custom_curve" in st.session_state:
             options["custom"] = st.session_state.custom_curve["label"]
-        st.selectbox("Species / life stage", list(options), key="stage", format_func=options.get,
+        st.selectbox("Suitability curves / species / life stage", list(options), key="stage", format_func=options.get,
                      on_change=stage_changed, args=(curves,))
         curve = active_curve(curves)
+        if curve.get("available") is False:
+            st.warning(curve["curveNote"])
+            st.info("To enable this preset, add the original Shiny depth, velocity, and substrate CSVs "
+                    "as gift_shiny_default_depth.csv, gift_shiny_default_velocity.csv, and "
+                    "gift_shiny_default_substrate.csv in inputs/curves. Select another curve set to continue.")
+            st.stop()
+        if st.button("View Suitability Curves", width="stretch", key="view_suitability_curves"):
+            show_suitability_curves(curve)
+        if curve.get("curveNote"):
+            st.caption(curve["curveNote"])
         with st.expander("Use your own suitability curves"):
             st.caption("Upload one set of depth, velocity, and substrate CSVs. Coordinates use m, m/s, and mm; suitability ranges from 0 to 1.")
             with st.form("custom_curves"):
@@ -213,6 +259,16 @@ def sidebar(curves):
         if curve.get("periodSource"):
             st.markdown(f"[Timing reference]({curve['periodSource']})")
         cfs = st.radio("Flow units", ["cfs", "m³/s"], horizontal=True, key="flow_units") == "cfs"
+        st.divider()
+        st.markdown("**Network bankfull geometry**")
+        st.selectbox("Bankfull width regression", NETWORK_BANKFULL_OPTIONS, key="network_width_source")
+        st.selectbox("Bankfull depth regression", NETWORK_BANKFULL_OPTIONS, key="network_depth_source")
+        st.caption("Both selections apply to every segment on the map. Custom values below the map "
+                   "apply only to the selected segment's plots.")
+        st.toggle("Map mean HSI across the full flow curve", value=False, key="mean_hsi",
+                  help="Off: median habitat at the selected monthly flows. On: each segment's mean HSI "
+                       "over its entire modeled discharge range, using 201 equally spaced flows.")
+        st.caption("Mean mode averages over discharge, without flow-duration weighting.")
         st.divider()
         st.caption("Monthly flows are 1971–2000 climatological means, not current observations.")
         st.caption("GIFT Python model · GPL-3.0")
@@ -259,7 +315,7 @@ def inspector(reach, monthly, summary, months, cfs):
         if summary.status != "ok":
             st.caption(STATUS_LABELS.get(summary.status, summary.status))
     st.caption(f"Temperature score: {number(reach['temp'])} · Priority score: {number(reach['priority'])}")
-    with st.expander("CHaMP Regression input values"):
+    with st.expander("Network hydraulic input values"):
         st.dataframe(pd.DataFrame([
             {"Input": label, "Value": reach.get(field), "Units": unit}
             for label, field, unit in (("Bankfull width", "bfWidth", "m"),
@@ -270,11 +326,13 @@ def inspector(reach, monthly, summary, months, cfs):
 
 
 @st.fragment(key="workspace")
-def workspace(network, curve, monthly, summary, months, cfs, signature):
+def workspace(network, curve, monthly, summary, months, cfs, signature, mean_hsi=False):
     features = network["features"]
     if st.session_state.get("_overview_signature") != signature:
         st.session_state._overview_signature = signature
         st.session_state._evaluated_reaches = {}
+    if st.session_state.get("_plot_source_signature") != signature[0]:
+        st.session_state._plot_source_signature = signature[0]
         st.session_state._plot_choices = {}
         for key in list(st.session_state):
             if key.startswith("plot-"):
@@ -290,9 +348,12 @@ def workspace(network, curve, monthly, summary, months, cfs, signature):
     if reach is not None:
         parameters = hydraulic_parameters(reach)
         with st.spinner("Calculating the selected segment…"):
-            hyd = cached_hydraulics(selected_id, parameters, model_signature)
+            try:
+                hyd = cached_hydraulics(selected_id, parameters, model_signature)
+            except (ValueError, RuntimeError):
+                hyd = pd.DataFrame()
             evaluated = reach_with_hydraulics(reach, hyd)
-            selected_monthly = cached_reach_monthly(
+            selected_monthly = compute_monthly([evaluated], curve) if hyd.empty else cached_reach_monthly(
                 selected_id, curve_json, parameters, model_signature,
                 tuple(row[0] for row in reach["months"]), reach.get("summerWidth"), reach)
         selected_summary = aggregate_period(selected_monthly, months, bool(summary.requireAll.iloc[0])).loc[selected_id]
@@ -303,7 +364,7 @@ def workspace(network, curve, monthly, summary, months, cfs, signature):
     overrides = st.session_state._evaluated_reaches
     # Shared comparison/export caches must distinguish which reaches were
     # evaluated, including two users who have evaluated the same number of IDs.
-    overview_revision = tuple(sorted(overrides))
+    overview_revision = (tuple(sorted(overrides)), mean_hsi)
     if overrides:
         features = [overrides.get(r["id"], r) for r in features]
         updated = [cached_reach_monthly(
@@ -319,25 +380,41 @@ def workspace(network, curve, monthly, summary, months, cfs, signature):
     pending = [r["id"] for r in features if any(row[4] == "pending_selection" for row in r["months"])]
     network = dict(network, features=features,
                    metadata=dict(network["metadata"], pendingHydraulics=pending))
+    mapping_summary = cached_full_curve_summary(curve_json, signature) if mean_hsi else summary
     a, b, c = st.columns([3, 1.25, 1])
-    layer = a.radio("Network layer", ["GIFT habitat", "Temperature", "Priority"], horizontal=True, key="network_layer")
+    layer = a.radio("Network Layer", ["GIFT habitat", "Temperature Suitability", "Provisional Priority"], horizontal=True, key="network_layer")
     metric_labels = {"hsi":"HSI", "wua":"WUA"}
     if st.session_state.get("map_metric", "hsi") not in metric_labels:
         st.session_state.map_metric = "hsi"
-    metric = b.selectbox("Habitat metric", list(metric_labels), format_func=metric_labels.get, key="map_metric")
+    if mean_hsi:
+        if "map_metric" in st.session_state:
+            st.session_state._range_map_metric = st.session_state.map_metric
+        metric = "hsi"
+        b.caption("Habitat metric: mean HSI")
+    else:
+        if "map_metric" not in st.session_state:
+            st.session_state.map_metric = st.session_state.get("_range_map_metric", "hsi")
+        metric = b.selectbox("Habitat metric", list(metric_labels), format_func=metric_labels.get, key="map_metric")
+        st.session_state._range_map_metric = metric
     basemap = c.selectbox("Basemap", ["Light", "Dark", "Satellite"], key="basemap")
     if st.session_state.get("view_focus") not in allowed_ids:
         st.session_state.view_focus = None
-    content = map_content(features, summary, layer, metric,
+    content = map_content(features, mapping_summary, layer, metric,
                           (signature, curve_json, tuple(months), bool(summary.requireAll.iloc[0]),
                            layer, metric, overview_revision))
-    st.caption(f"{curve['label']} · {period_label(months)} · {content['valid_count']}/{len(features)} segments with habitat results")
+    map_basis = "Mean HSI across the full modeled flow curve" if mean_hsi else period_label(months)
+    st.caption(f"{curve['label']} · {map_basis} · {content['valid_count']}/{len(features)} segments with habitat results")
+    st.caption(f"Network width: {signature[1]} · Network depth: {signature[2]}")
+    if mean_hsi:
+        st.caption("Mean HSI is the area under each segment's HSI–discharge curve divided by its modeled "
+                   "discharge range, estimated from 201 equally spaced flows. Selected months do not "
+                   "affect this map. The inspector and gold plot markers retain the selected monthly flows.")
     if pending:
         st.info(f"{len(pending)} segments await habitat calculation. Select a segment to calculate it; gray values are unavailable until evaluated.")
-    if layer == "Temperature":
-        st.info("Temperature scores describe juvenile-salmon suitability under the supplied interpretation of See et al. (2021). They do not change with the selected life stage or month.")
-    elif layer == "Priority":
-        st.caption("Map colors use the configured priority field, unchanged by life stage or flow period.")
+    if layer == "Temperature Suitability":
+        st.info("Temperature scores describe juvenile-salmon suitability under the supplied interpretation of See et al. (2021) using NoRWeST mean August stream temperature. They do not change with the selected life stage or month.")
+    elif layer == "Provisional Priority":
+        st.caption("Provisional Model stream segment restoration priority")
     left, right = st.columns([2.6, 1], gap="large")
     with left:
         fit_a, fit_b, _ = st.columns([1, 1, 2])
@@ -355,9 +432,11 @@ def workspace(network, curve, monthly, summary, months, cfs, signature):
         st.pydeck_chart(
             deck, key=key, height=530, on_select=lambda: map_selected(key, content["allowed"]),
             selection_mode="single-object")
-        colors = ",".join("rgb("+",".join(map(str,color))+")" for color in content["palette"])
+        colors = legend_gradient(content["palette"])
         st.markdown(f'<div class="legend"><span>{content["title"]} &nbsp; 0</span><div style="background:linear-gradient(90deg,{colors})"></div><span>{number(content["high"])}</span></div>', unsafe_allow_html=True)
         st.caption(potential_maximum_note(layer, metric))
+        if layer == "Temperature Suitability":
+            st.caption("Temperature colors place tan at 80% of the observed maximum to distinguish higher suitability scores.")
         st.caption("Higher values → greater suitability or priority. Gray = unavailable map value. Gold = selected segment. Select a reach on the map or in a comparison plot.")
     with right:
         if reach is None:
@@ -367,8 +446,8 @@ def workspace(network, curve, monthly, summary, months, cfs, signature):
     if reach is not None:
         diagnostics_panel(reach, selected_monthly, selected_summary, months, cfs, curve, network["metadata"])
         flow_panel(reach, selected_monthly, months, cfs, curve_json, signature)
-    comparison_panel(features, summary, selected_id, curve_json, months, signature, overview_revision)
-    network_downloads(network, summary, curve, months, bool(summary.requireAll.iloc[0]), signature,
+    comparison_panel(features, mapping_summary, selected_id, curve_json, months, signature, overview_revision, mean_hsi)
+    network_downloads(network, mapping_summary, curve, months, bool(summary.requireAll.iloc[0]), signature,
                       overview_revision)
 
 
@@ -377,9 +456,10 @@ def diagnostics_panel(reach, monthly, summary, months, cfs, curve, metadata):
     if not rows[["hsi", "wua"]].isna().any().any() and pd.notna(summary.hsi) and pd.notna(summary.wua):
         return
     payload = gift_diagnostics(reach, monthly, summary, months, curve, metadata)
-    with st.expander("GIFT inputs and unavailable-result diagnostics", expanded=True):
+    outside_bankfull = rows.status.eq("above_bankfull").any()
+    with st.expander("GIFT inputs and unavailable-result diagnostics", expanded=not outside_bankfull):
         st.markdown(f"**{reach['name']} (COMID: {reach['id']})**")
-        source_label = "Selected plot" if reach.get("plotInputs") else "CHaMP Regression"
+        source_label = "Selected plot" if reach.get("plotInputs") else "Active network regressions"
         st.caption(f"{source_label} · Hydraulic model: {reach['modelStatus']} · Period: {STATUS_LABELS.get(summary.status, summary.status)}")
         factor, flow_unit = (CFS_PER_M3S, "cfs") if cfs else (1.0, "m³/s")
         definitions = [
@@ -398,7 +478,10 @@ def diagnostics_panel(reach, monthly, summary, months, cfs, curve, metadata):
         for label, field, unit, required in definitions:
             value = payload["input_parameters"][field]
             missing = value is None or not np.isfinite(value)
-            if field == "maxDepth" and reach.get("plotInputs") and not reach["plotInputs"]["maximum_depth_supplied"]:
+            if field == "maxDepth" and reach.get("maxDepth") is None and (
+                    reach.get("plotInputs", {}).get("maximum_depth_supplied") is False or
+                    any(s != CHAMP for s in (reach.get("networkInputs", {}).get("width_source", CHAMP),
+                                             reach.get("networkInputs", {}).get("depth_source", CHAMP)))):
                 required = False
                 status = "Not supplied for this plot"
             else:
@@ -431,54 +514,55 @@ def remember_plot_input(comid, field, key):
 
 def reset_plot_inputs(reach):
     comid = reach["id"]
-    st.session_state._plot_choices[comid] = default_plot_settings(reach)
-    for field in default_plot_settings(reach):
+    st.session_state._plot_choices[comid] = default_overrides(reach)
+    for field in default_overrides(reach):
         st.session_state.pop(f"plot-{comid}-{field}", None)
 
 
 def plot_controls(reach):
-    """Persist independent plot choices by COMID, including hidden custom inputs."""
+    """Persist custom inputs by COMID; unchecked fields follow network choices."""
     comid = reach["id"]
     st.session_state.setdefault("_plot_choices", {})
-    choices = st.session_state._plot_choices.setdefault(comid, default_plot_settings(reach))
+    choices = st.session_state._plot_choices.setdefault(comid, default_overrides(reach))
     with st.expander("Adjust selected-segment hydraulics", expanded=True):
         st.caption("These inputs apply to this segment's response curves and monthly plot results. "
-                   "The network map and comparisons use CHaMP Regression.")
+                   "The network map and comparisons retain the regressions selected in the sidebar.")
         columns = st.columns(2)
-        for col, kind, label, field in ((columns[0], "width", "Bankfull width", "bfWidth"),
-                                        (columns[1], "depth", "Mean bankfull depth", "bfDepth")):
+        definitions = (("width", "Bankfull width", "bfWidth", "m", .01, "%.4f"),
+                       ("depth", "Mean bankfull depth", "bfDepth", "m", .01, "%.4f"),
+                       ("slope", "Slope", "slope", "m/m", .0001, "%.7f"),
+                       ("d84", "D84", "d84", "mm", 1., "%.3f"))
+        for index, (kind, label, field, units, step, fmt) in enumerate(definitions):
+            col = columns[index % 2]
             with col:
-                name, key = kind+"_source", f"plot-{comid}-{kind}_source"
-                st.session_state.setdefault(key, choices[name])
-                st.selectbox(label+" source", BANKFULL_OPTIONS, key=key,
+                name, key = "override_"+kind, f"plot-{comid}-override_{kind}"
+                st.session_state.setdefault(key, choices.get(name, False))
+                st.toggle("Custom "+label.lower()+" for this plot", key=key,
                              on_change=remember_plot_input, args=(comid, name, key))
                 choices[name] = st.session_state[key]
-                if choices[name] == CUSTOM:
-                    name, key = "custom_"+kind, f"plot-{comid}-custom_{kind}"
-                    value = choices.get(name)
-                    value = float(value) if value is not None and np.isfinite(value) else 0.
-                    st.session_state.setdefault(key, value)
-                    st.number_input(label+" for plotting (m)", min_value=0., step=.01,
-                                    format="%.4f", key=key,
-                                    on_change=remember_plot_input, args=(comid, name, key))
-                    choices[name] = st.session_state[key]
-        slope_key = f"plot-{comid}-slope"
-        slope = choices.get("slope")
-        st.session_state.setdefault(slope_key, float(slope) if slope is not None and np.isfinite(slope) else 0.)
-        slope_col, reset_col = st.columns([2, 1])
-        slope_col.number_input("Slope for plotting (m/m)", min_value=0., step=.0001,
-                               format="%.7f", key=slope_key,
-                               on_change=remember_plot_input, args=(comid, "slope", slope_key))
-        choices["slope"] = st.session_state[slope_key]
-        reset_col.button("Reset plot inputs", key=f"reset-plot-{comid}", width="stretch",
-                         on_click=reset_plot_inputs, args=(reach,))
+                if choices[name]:
+                    value_name, value_key = "custom_"+kind, f"plot-{comid}-custom_{kind}"
+                    value = choices.get(value_name)
+                    if value is None:
+                        value = reach.get(field)
+                    st.session_state.setdefault(value_key, float(value) if value is not None and np.isfinite(value) else 0.)
+                    st.number_input(f"{label} for plotting ({units})", min_value=0., step=step,
+                                    format=fmt, key=value_key,
+                                    on_change=remember_plot_input, args=(comid, value_name, value_key))
+                    choices[value_name] = st.session_state[value_key]
+                else:
+                    st.caption(f"Network {label.lower()}: {number(reach.get(field), 7 if kind == 'slope' else 3)} {units}")
+        st.button("Reset plot inputs", key=f"reset-plot-{comid}", width="stretch",
+                  on_click=reset_plot_inputs, args=(reach,))
+        sources = reach.get("networkInputs", {"width_source": CHAMP, "depth_source": CHAMP})
         region = getattr(settings, "BIEGER_REGION", "IMP")
-        for note in regression_notes(reach, choices, region):
+        for note in regression_notes(reach, sources, region):
             st.caption(note)
-        if choices["width_source"] != CHAMP or choices["depth_source"] != CHAMP:
+        if (choices["override_width"] or choices["override_depth"] or
+                sources["width_source"] != CHAMP or sources["depth_source"] != CHAMP):
             st.caption("Maximum bankfull depth is not supplied. GIFT estimates shape factor from "
                        "(bankfull width / mean bankfull depth) / 100.")
-    return plot_reach(reach, choices, region)
+    return apply_plot_overrides(reach, choices)
 
 
 @st.fragment
@@ -510,16 +594,27 @@ def flow_panel(reach, selected_monthly, months, cfs, curve_json, signature):
     c.metric("Plot slope (m/m)", f"{reach['slope']:.6g}")
     factor, unit = (CFS_PER_M3S, "cfs") if cfs else (1., "m³/s")
     d.metric(f"Plot bankfull flow ({unit})", number(reach.get("qMax")*factor if reach.get("qMax") is not None else None))
-    native = cached_native(selected_id, curve_json, hydraulic_parameters(reach),
-                           hydraulic_model_signature(), reach.get("summerWidth"), reach)
-    if native.empty:
-        st.info("A flow-response curve is unavailable because this segment has missing hydraulic inputs.")
-    wua_tab, hsi_tab = st.tabs(["WUA", "HSI"], key="flow_tabs", on_change="rerun")
+    wua_tab, hsi_tab, geometry_tab = st.tabs(["WUA", "HSI", "Channel Geometry"], key="flow_tabs", on_change="rerun")
+    # Opening geometry does not evaluate the 981-level habitat response.
+    native = pd.DataFrame()
+    if wua_tab.open or hsi_tab.open or st.session_state.get("monthly_results", False):
+        native = cached_native(selected_id, curve_json, hydraulic_parameters(reach),
+                               hydraulic_model_signature(), reach.get("summerWidth"), reach)
+        if native.empty:
+            st.info("A flow-response curve is unavailable because this segment has missing hydraulic inputs.")
     for tab, field in ((wua_tab, "wua"), (hsi_tab, "hsi")):
         if tab.open:
             with tab:
                 st.plotly_chart(flow_figure(native, selected_monthly, months, detail, field, cfs), width="stretch", key=f"flow-{field}")
-    st.caption(f"Substrate suitability = {number(selected_monthly.iloc[0].s)} at predicted D84 = {number(reach['d84'],1)} mm. Dashed component curves use the right axis. Gold points are separately evaluated monthly results; pale shading spans the selected flows (a dotted line marks a single flow). No extrapolation beyond the modeled flow range.")
+    if geometry_tab.open:
+        with geometry_tab:
+            st.plotly_chart(channel_geometry_figure(reach), width="stretch", key="channel-geometry")
+            maximum = hyd.attrs.get("simulated_max_depth_m")
+            st.caption(f"Active plot geometry: width {number(reach['bfWidth'])} m; mean bankfull depth "
+                       f"{number(reach['bfDepth'])} m; GIFT shape factor {number(reach.get('shapeUsed'), 5)}; "
+                       f"modeled maximum depth {number(maximum)} m. The vertical axis is exaggerated. "
+                       "This is GIFT's assumed cross section, not a surveyed section.")
+    st.caption(f"Substrate suitability = {number(selected_monthly.iloc[0].s)} at plot D84 = {number(reach['d84'],1)} mm. Dashed component curves use the right axis. Gold points are separately evaluated monthly results; pale shading spans the selected flows (a dotted line marks a single flow). No extrapolation beyond the modeled flow range.")
     details = st.expander("Monthly results for this segment", key="monthly_results", on_change="rerun")
     if details.open:
         with details:
@@ -534,10 +629,11 @@ def flow_panel(reach, selected_monthly, months, cfs, curve_json, signature):
 
 
 @st.fragment
-def comparison_panel(features, summary, selected_id, curve_json, months, signature, overview_revision=0):
+def comparison_panel(features, summary, selected_id, curve_json, months, signature, overview_revision=0, mean_hsi=False):
     st.divider()
     st.subheader("HSI comparisons")
-    st.caption("Click a dot to select and locate its reach on the map. Values summarize the selected months; the HSI axis follows the observed maximum.")
+    basis = "mean HSI across each segment's full modeled flow curve" if mean_hsi else "the selected months"
+    st.caption(f"Click a dot to select and locate its reach on the map. Values summarize {basis}; the HSI axis follows the observed maximum.")
     comparisons = list(COMPARISON_FIELDS)
     tabs = st.tabs(comparisons, key="comparison_tabs", on_change="rerun")
     for tab, comparison in zip(tabs, comparisons):
@@ -558,12 +654,19 @@ def network_downloads(network, summary, curve, months, require_all, signature, o
     features = network["features"]
     export = cached_network_csv(json.dumps(curve, sort_keys=True), signature, tuple(months),
                                 require_all, features, summary, network["metadata"], overview_revision)
-    st.download_button("Download network period summary (CSV)", export, "gift_network_period_summary.csv", mime="text/csv", on_click="ignore")
+    full_mean = "aggregation" in summary and summary.aggregation.eq("full_curve_mean").all()
+    download_label = "Download network mean-HSI summary (CSV)" if full_mean else "Download network period summary (CSV)"
+    filename = "gift_network_mean_hsi_summary.csv" if full_mean else "gift_network_period_summary.csv"
+    st.download_button(download_label, export, filename, mime="text/csv", on_click="ignore")
     with st.expander("Coverage and input notes"):
         status_counts = summary.status.value_counts().rename_axis("Status").reset_index(name="Segments")
         status_counts["Status"] = status_counts.Status.map(lambda s: STATUS_LABELS.get(s,s))
         st.dataframe(status_counts, hide_index=True, width="stretch")
-        st.caption(f"{int(summary.complete.sum())}/{len(features)} segments have every selected month. A positive flow outside the modeled range stays unavailable. A valid zero-flow month contributes zero HSI and WUA.")
+        if full_mean:
+            st.caption(f"{int(summary.complete.sum())}/{len(features)} segments have a complete full-flow mean. "
+                       "Averages use 201 equally spaced discharges within each segment's modeled range.")
+        else:
+            st.caption(f"{int(summary.complete.sum())}/{len(features)} segments have every selected month. A positive flow outside the modeled range stays unavailable. A valid zero-flow month contributes zero HSI and WUA.")
         st.caption(f"Maximum bankfull depth joined for {network['metadata']['maxDepthMatches']} stream IDs; priority joined for {network['metadata']['priorityMatches']}. {len(network['metadata']['skippedHydraulics'])} segments have missing or invalid hydraulic inputs. Shape factors are used without capping; {len(network['metadata']['shapeFactorAbove07'])} exceed 0.7.")
 
 
@@ -572,7 +675,7 @@ def methods(network):
     with st.expander("Input sources and field mappings"):
         st.caption("These are the files and columns used for the loaded model inputs. Source units are converted to SI for calculation. Edit settings.py, then use Reload input data in the sidebar or restart the app.")
         st.dataframe(pd.DataFrame(input_source_rows(metadata)), hide_index=True, width="stretch")
-    with st.expander("Data, methods, and suitability curves"):
+    with st.expander("Data and methods"):
         st.markdown("""
 **Network and joins.** The active files, layers, join keys, fields, and source units
 are listed in **Input sources and field mappings**. Geometry, bankfull width,
@@ -580,15 +683,15 @@ mean depth, slope, D84, and monthly flows come from the configured streams layer
 Maximum depth and priority use their configured ID joins. Temperature uses the
 explicitly configured streams or priority source. Missing values remain unavailable.
 
-**Hydraulics and habitat.** The network uses **CHaMP Regression** inputs. Its shape factor is
-`1 - mean bankfull depth / maximum bankfull depth`, without capping.
-Selected-segment plots have independent width/depth sources: CHaMP Regression,
-Bieger National, Bieger Regional, Castro and Jackson 2001, or custom values.
-Slope can be changed for the selected plot. Plot choices are saved separately
-for each segment in the current session and do not replace network scores.
+**Hydraulics and habitat.** The sidebar selects independent bankfull width and
+depth regressions for every segment: CHaMP Regression, Bieger 2015 National,
+Bieger 2015 Regional, or Castro and Jackson 2001. CHaMP is the default and uses
+`1 - mean bankfull depth / maximum bankfull depth` for its shape factor.
+Selected-segment plots can override width, mean depth, slope, and D84.
+Plot overrides are saved separately for each segment and do not replace network scores.
 Alternative or custom width/depth omits maximum bankfull depth; GIFT then uses
 `(bankfull width / mean bankfull depth) / 100` for its shape factor.
-The Bieger Regional division is configured by `BIEGER_REGION` in settings.py
+The Bieger 2015 Regional division is configured by `BIEGER_REGION` in settings.py
 (Intermontane Plateau for this network). Castro and Jackson uses the Western
 Cordillera drainage-area relationships verified against USGS StreamStats,
 converting feet and mi² to SI.
@@ -628,22 +731,13 @@ derived computations use a bounded server cache. Full app reruns check the sourc
 files, field mappings, units, curves, and calculation code before using prepared data.
 Changed inputs refresh the stream attributes. Segments needing new hydraulics
 are evaluated when selected, and their results are added to the map and export.
-Startup does not rebuild hydraulic curves for the network.
+Default startup does not rebuild hydraulic curves for the network.
+Alternative network regressions are solved and cached when selected.
+Mean-HSI mode averages each segment's full response curve over discharge,
+using 201 equally spaced flows and trapezoidal integration divided by the
+modeled discharge range. It is not weighted by flow duration. The default map
+continues to show the median result at the selected monthly flows.
 """)
-        curve = st.session_state.get("current_curve")
-        if curve:
-            a,b,c = st.columns(3)
-            for col,kind in ((a,"depth"),(b,"velocity"),(c,"substrate")):
-                with col:
-                    st.markdown(f"**{kind.capitalize()} curve**")
-                    if kind == "substrate":
-                        st.dataframe(pd.DataFrame(curve[kind], columns=["Lower (mm)","Upper (mm)","Suitability"]), hide_index=True, height=220)
-                    else:
-                        values = np.asarray(curve[kind])
-                        fig = go.Figure(go.Scatter(x=values[:,0],y=values[:,1],mode="lines+markers",line=dict(color="#186354")))
-                        fig.update_layout(height=220,template="plotly_white",margin=dict(l=10,r=10,t=10,b=10),xaxis_title="m" if kind == "depth" else "m/s",yaxis_range=[0,1])
-                        st.plotly_chart(fig,width="stretch",key=f"curve-{kind}")
-            st.caption("Points are looked up by nearest coordinate. The connecting lines illustrate the supplied curve; they do not change that lookup rule.")
 
 
 def main():
@@ -669,25 +763,34 @@ def main():
     }
     </style>""", unsafe_allow_html=True)
     st.title(APP_TITLE)
-    st.caption("Explore hydraulic habitat, temperature suitability, and restoration priority across one stream network.")
+    st.caption("Geomorphic Instream Flow Tool results across the Upper Grande Ronde basin.")
     if st.sidebar.button("Reload input data", help="Reread settings.py and check for changes to source files and field mappings."):
         st.rerun()
     try:
         with st.spinner("Loading stream network…"):
-            signature = data_signature()
-            network, curves = cached_data(signature)
+            sources = data_signature()
+            network, curves = cached_data(sources)
     except (OSError, ValueError, sqlite3.Error, KeyError) as exc:
         st.error(f"Input data could not be loaded: {exc}")
         st.info("Check the paths, layers, fields, and units in settings.py, then reload the app.")
         st.stop()
     st.session_state.setdefault("view_revision", 0)
     st.session_state.setdefault("selection_revision", 0)
-    curve, months, require_all, cfs = sidebar(curves)
+    curve, months, require_all, cfs = sidebar([*curves, gift_shiny_default()])
     st.session_state.current_curve = curve
+    signature = (sources, st.session_state.network_width_source, st.session_state.network_depth_source,
+                 getattr(settings, "BIEGER_REGION", "IMP"), hydraulic_model_signature())
+    mean_hsi = st.session_state.mean_hsi
+    if signature[1] != CHAMP or signature[2] != CHAMP or mean_hsi:
+        with st.spinner("Calculating network geometry for the selected regressions…"):
+            network = cached_network_solution(signature)[0] if mean_hsi else cached_geometry(signature)
+    if mean_hsi:
+        with st.spinner("Averaging HSI over each segment's modeled flow curve…"):
+            cached_full_curve_summary(json.dumps(curve, sort_keys=True), signature)
     with st.spinner("Evaluating monthly habitat with GIFT…"):
-        monthly = cached_monthly(json.dumps(curve, sort_keys=True), signature)
+        monthly = cached_monthly(json.dumps(curve, sort_keys=True), signature, mean_hsi)
         summary = aggregate_period(monthly, months, require_all)
-    workspace(network, curve, monthly, summary, months, cfs, signature)
+    workspace(network, curve, monthly, summary, months, cfs, signature, mean_hsi)
     methods(network)
 
 

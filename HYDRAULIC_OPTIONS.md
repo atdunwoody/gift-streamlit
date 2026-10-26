@@ -1,77 +1,105 @@
-# Selected-segment hydraulic options
+# Network and selected-segment hydraulic options
 
-Select a segment, then open **Habitat response to flow > Adjust selected-segment
-hydraulics**. Width and mean depth have independent source selectors:
+Use **Network bankfull geometry** in the sidebar to choose independent width
+and mean-depth regressions for every segment. The default is CHaMP Regression
+for both dimensions. The map, inspector, comparison plots, and network export
+use these network choices. Bieger options are labeled **Bieger 2015 National**
+and **Bieger 2015 Regional**.
 
-- CHaMP Regression: the existing configured input values, selected by default.
-- Bieger National: the nationwide relationship in Bieger et al. (2015), Table 3.
-- Bieger Regional: the division-level relationship selected by `BIEGER_REGION`
-  in `settings.py`. The supplied network uses `IMP`, Intermontane Plateau.
-- Castro and Jackson 2001: the Western Cordillera relationship, including the
-  Blue Mountains, with coefficients and units verified against USGS StreamStats.
-- Custom value: enter a positive width or mean depth in metres.
+## Segment-only overrides
 
-**Slope for plotting (m/m)** can be edited independently. The default is the
-selected segment's configured source slope. ft/ft has the same numeric value.
-Controls update the active plot and the segment's monthly plot table. A reset
-button restores both CHaMP sources and the segment's original slope.
+Select a segment, then open **Adjust selected-segment hydraulics**. Independent
+on/off switches allow custom bankfull width (m), mean bankfull depth (m), slope
+(m/m), and D84 (mm). Unchecked fields follow the current network scenario.
+Custom values update only the response curves, Channel Geometry tab, monthly
+plot table, and segment CSV downloads. The map and network comparisons retain
+the sidebar regressions. D84 affects both hydraulic resistance and the substrate
+suitability class; it is one representative grain size, not a grain-size distribution.
+
+Overrides persist by COMID in the current session, including when network
+regressions or species change. **Reset plot inputs** restores the active network
+scenario for that segment. Changing the underlying source data clears overrides.
+Invalid geometry remains unavailable with an explanation and can be corrected
+through the custom inputs; the app does not reuse the old scenario's scores.
 
 ## Equations
 
 | Source | Bankfull width | Mean bankfull depth | Input/output units |
 | --- | --- | --- | --- |
-| Bieger National | `2.70 * DA**0.352` | `0.30 * DA**0.213` | DA in km2; geometry in m |
-| Bieger Regional, IMP | `1.11 * DA**0.415` | `0.07 * DA**0.329` | DA in km2; geometry in m |
-| Castro and Jackson, Western Cordillera | `9.40 * DA**0.42` | `0.61 * DA**0.33` | DA in mi2; geometry in ft, then converted to m |
+| Bieger 2015 National | `2.70 * DA**0.352` | `0.30 * DA**0.213` | DA in km2; geometry in m |
+| Bieger 2015 Regional, IMP | `1.11 * DA**0.415` | `0.07 * DA**0.329` | DA in km2; geometry in m |
+| Castro and Jackson 2001, Western Cordillera | `9.40 * DA**0.42` | `0.61 * DA**0.33` | DA in mi2; geometry in ft, converted to m |
 
-Bieger coefficients retain the printed precision in Table 3. Regional ranges
-are those tabulated in Bieger Table 2. Other Bieger division coefficients are
-included in `bankfull_regressions.py` for networks using a different division.
+Bieger uses the printed Table 3 coefficients. `BIEGER_REGION` in `settings.py`
+selects the division for the Regional option; the supplied basin uses `IMP`,
+Intermontane Plateau. All eight divisions and their Table 2 drainage-area ranges
+are included. Domain-extrapolation notes appear with the selected segment.
+Castro and Jackson uses USGS NSS region 847 (GC1857), Western Cordillera;
+its published drainage-area range is 19.6 to 5,090 mi2. The official response
+at 100 mi2 returns 65.0 ft width and 2.79 ft depth and is retained under
+`tests/regression_reference/`. The running app calls no online regression service.
 
-The Castro and Jackson option uses USGS NSS regression region **847**, code
-**GC1857**, `Western_Cordillera_CastroJackson_2001`. Its stated drainage-area
-range is 19.6-5,090 mi2. At 100 mi2, the USGS estimate returns 65.0 ft width and
-2.79 ft mean depth. The returned equations, units, and estimates are retained
-in `tests/regression_reference/castro_jackson_usgs.json` as an offline check.
-The app displays a note when a selected equation is used outside its stated
-drainage-area range. No online service is called by the app.
+## Maximum depth and the Channel Geometry tab
 
-## Maximum depth and shape
+When both network geometry sources are CHaMP, the source maximum bankfull depth
+is used. Slope-only or D84-only overrides preserve it. Any alternative regression
+or custom width/depth omits the maximum-depth argument entirely. The original
+GIFT fallback is `shape_factor = (bankfull_width / mean_bankfull_depth) / 100`.
+Factors are not capped; values outside [0, 1) are unavailable.
 
-When both geometry sources are CHaMP Regression, the existing maximum bankfull
-depth is supplied. A slope-only adjustment also retains this original geometry.
+The **Channel Geometry** tab plots the exact 10,001-point cross-section grid used
+by the hydraulic simulator, with the bankfull water surface at elevation zero.
+It follows the active segment plot inputs. Axes use metres; vertical exaggeration
+is stated. This is GIFT's assumed section, not a surveyed section. Maximum depth
+shown there is the model's resulting geometry and is not an added input or cap.
 
-Selecting an alternative regression or custom value for either width or depth
-omits the maximum-depth argument entirely. The original GIFT fallback computes:
+## Selected-flow map versus mean-HSI map
 
-```python
-shape_factor = (bankfull_width / mean_bankfull_depth) / 100
-```
+The mean-HSI switch defaults off. The default map is unchanged: habitat is
+calculated at each exact monthly EROM flow, then the median of selected months
+is mapped. Complete/partial-period rules still apply.
 
-The original maximum depth is not scaled or reused with alternative geometry.
-GIFT's inferred maximum depth follows its own shape calculation. Shape factors
-are not capped; inputs that imply a factor of 1 or greater are rejected with
-an actionable message. A positive width and mean depth are required.
+With the switch on, each segment's mean HSI over its full modeled flow curve is
+mapped. This is a separate mean for each segment, not one basin-wide number.
+The calculation uses 201 equally spaced discharges from the native modeled
+minimum to bankfull, linearly interpolates hydraulic variables, evaluates the
+existing GIFT habitat equations at each discharge, and divides the trapezoidal
+integral of HSI by the modeled discharge range. It does not extrapolate to zero
+or above bankfull. This is an average over discharge, not a time mean and not
+weighted by flow duration. Mean component suitability is reported separately;
+mean HSI is not obtained by multiplying mean components.
 
-This maximum-depth policy differs from the earlier standalone sensitivity
-analysis, which preserved shape by scaling mean and maximum depths together.
-The selected-segment options now follow the requested no-maximum-depth policy.
+Mean mode drives the habitat map, HSI comparisons, and network summary export.
+The inspector and gold response-plot markers continue to show selected monthly
+flows. HSI is the map metric in mean mode; switching off restores the prior
+HSI/WUA choice. Temperature and provisional priority values remain unchanged.
 
-## Scope, persistence, and downloads
+## Curve viewer and the Shiny preset
 
-- Adjustments apply to the selected segment's flow-response curves, gold
-  monthly markers, monthly plot table, and segment-specific CSV downloads.
-- The map, right-hand inspector, network comparison scatterplots, and network
-  summary export retain their CHaMP Regression calculations.
-- Choices are remembered independently for each segment in the current session.
-  Returning to a segment restores its custom values and source choices.
-  A changed input-data signature clears saved plot choices.
-- Monthly and full-curve CSVs record the active width/depth sources, dimensions,
-  slope, shape factor, and regression-region labels. Maximum depth is blank
-  when the parameter is omitted. Flow units for downloads remain SI.
-- Curves use the existing bounded hydraulic and habitat caches. Changing inputs
-  solves only the selected segment. Restart and deployment require no additional
-  Python dependencies or network services.
+**View Suitability Curves** in the sidebar opens a dialog with the active depth,
+velocity, and substrate curves. It works for the supplied life stages and custom
+uploads. Substrate plots show each class interval explicitly.
+
+The requested **GIFT Shiny Default** preset loader is present, but its raw source
+values remain unverified and it is unavailable in this release. The live author's
+Shiny defaults differ from the Ptolemy example in the public R guide. No curves
+have been substituted. See `inputs/curves/SHINY_DEFAULT_SOURCE.md` for the exact
+CSV filenames needed to enable it. All existing curve options remain available.
+
+## Performance and exports
+
+Default CHaMP startup still performs zero hydraulic solves and uses the bundled
+monthly overview. Changing a network regression solves the network on demand.
+Two complete physical scenarios are cached independently of suitability curves;
+monthly and full-flow habitat summaries have their own bounded caches. Selecting
+a segment and changing plot overrides use the existing per-segment caches.
+No dependencies or online services were added.
+
+Network exports record active width/depth sources and explicitly distinguish
+selected-month medians from full-flow means. Full-flow coverage is counted in
+flow samples; monthly coverage remains counted in months. Segment CSVs record
+active sources, width, mean depth, slope, D84, shape factor, and optional maximum
+depth. Original source GeoPackages and prepared CHaMP data are unchanged.
 
 ## References
 
