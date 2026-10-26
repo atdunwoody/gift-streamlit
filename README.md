@@ -85,6 +85,14 @@ the cached hydraulics and evaluate habitat; repeat selections reuse both caches.
 
 ## Features
 
+- Independent bankfull width and mean-depth choices for the selected segment's
+  plots: CHaMP Regression, Bieger National, Bieger Regional, Castro and Jackson
+  2001, or custom values. Slope is editable separately. Choices persist by
+  segment in the current session, with a Reset plot inputs button.
+- Alternative or custom width/depth omits maximum bankfull depth. GIFT then
+  estimates shape factor from width/mean depth/100. The network map, inspector,
+  and comparison scores continue to use the default CHaMP Regression inputs.
+  See `HYDRAULIC_OPTIONS.md` for equations, units, and the plot-only scope.
 - Clickable stream segments with raw mean depth, mean velocity, predicted D84,
   component suitability, HSI, WUA, temperature score, and priority score.
 - Select reaches on the map or by clicking a comparison-plot point. Plot

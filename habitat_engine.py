@@ -176,15 +176,19 @@ def hydraulic_parameters(reach):
 
 def calculate_hydraulics(parameters):
     """Solve one reach only. The caller owns the bounded Streamlit cache."""
-    if any(value is None or not np.isfinite(value) or value <= 0 for value in parameters):
-        return pd.DataFrame()
     slope, width, depth, maximum, d84 = parameters
-    if maximum < depth:
+    if any(value is None or not np.isfinite(value) or value <= 0
+           for value in (slope, width, depth, d84)):
+        return pd.DataFrame()
+    if maximum is not None and (not np.isfinite(maximum) or maximum <= 0):
+        return pd.DataFrame()
+    if maximum is not None and maximum < depth:
         raise ValueError("Maximum bankfull depth is below mean bankfull depth")
+    optional = {"max_bankfull_depth": maximum} if maximum is not None else {}
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
         return avg_hydraulics(slope, width, depth, d84,
-                              max_bankfull_depth=maximum, full_curve=True)
+                              full_curve=True, **optional)
 
 
 def reach_with_hydraulics(reach, hyd):
@@ -337,6 +341,7 @@ def gift_diagnostics(reach, monthly, summary, months, curve, metadata=None):
         "COMID": reach["id"], "stream_name": reach["name"],
         "model_status": reach["modelStatus"],
         "input_parameters": {field: reach.get(field) for field in fields},
+        "plot_adjustments": reach.get("plotInputs"),
         "input_sources": input_source_rows(metadata) if metadata else [],
         "units": {"bfWidth": "m", "bfDepth": "m", "maxDepth": "m", "slope": "m/m",
                   "d84": "mm", "qMin": "m3/s", "qMax": "m3/s",

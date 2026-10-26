@@ -18,6 +18,9 @@ PRIORITY_PATH = ROOT / "inputs/Provisional_Model_Layer.gpkg"  # CSV attribute ta
 PRIORITY_LAYER = "provisional_model_layer"
 CURVES_DIRECTORY = ROOT / "inputs/curves"
 APP_TITLE = "GIFT Habitat Explorer"
+# Physiographic division for the selected-segment Bieger Regional option.
+# IMP = Intermontane Plateau, covering the supplied Upper Grande Ronde network.
+BIEGER_REGION = "IMP"
 
 # Source columns. Required model fields must exist; null values remain unavailable.
 # Optional display fields can be disabled with None. All join IDs must be integers.

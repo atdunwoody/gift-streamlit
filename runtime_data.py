@@ -11,7 +11,7 @@ from tools.prepare_network import prepare_network
 def hydraulic_model_signature():
     return tuple(file_hash(ROOT / relative) for relative in (
         "model/gift_habitat/hydraulics.py", "model/gift_habitat/_validation.py",
-        "model/gift_habitat/habitat.py", "habitat_engine.py"))
+        "model/gift_habitat/habitat.py", "habitat_engine.py", "bankfull_regressions.py"))
 
 
 def runtime_signature(config):

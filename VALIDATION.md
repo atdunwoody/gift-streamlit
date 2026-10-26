@@ -1,5 +1,23 @@
 # Validation record
 
+## Selected-segment hydraulic options, 2026-10-25
+
+`python -m pytest -q` passed **96 tests** in the updated app package. The 14 new
+checks cover published regression estimates and USGS unit conventions,
+independent width/depth choices, omission of the maximum-depth argument for all
+alternative/custom geometry, slope-only scaling, invalid shape recovery,
+scenario metadata in CSV exports, cache reuse, network-score isolation,
+per-segment custom-value persistence, reset, and plotting when the original
+CHaMP dimensions are missing.
+
+The existing 82 scientific, input-preparation, portability, on-demand, and app
+state checks also pass. The original GIFT hydraulic equations, input data, and
+prepared network scores are unchanged. Castro and Jackson coefficients were
+verified against the USGS NSS Western Cordillera response stored under
+`tests/regression_reference/`. Tests used the pinned application dependencies
+and Streamlit's official AppTest runner; browser rendering was not separately
+tested. No deployment was performed.
+
 Updated 2026-10-23. Run `run_checks.py` directly in VSCode to repeat the suite.
 Install `pytest` for development checks; normal app use does not require it.
 

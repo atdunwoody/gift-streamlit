@@ -12,6 +12,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from bankfull_regressions import (BANKFULL_OPTIONS, CHAMP, CUSTOM, default_plot_settings,
+                                 plot_export, plot_reach, regression_notes)
 from habitat_engine import (CFS_PER_M3S, MONTHS, STATUS_LABELS, aggregate_period,
                             calculate_hydraulics, compute_monthly, curve_from_csvs, gift_diagnostics,
                             hydraulic_parameters, input_source_rows, reach_with_hydraulics,
@@ -257,7 +259,7 @@ def inspector(reach, monthly, summary, months, cfs):
         if summary.status != "ok":
             st.caption(STATUS_LABELS.get(summary.status, summary.status))
     st.caption(f"Temperature score: {number(reach['temp'])} · Priority score: {number(reach['priority'])}")
-    with st.expander("Model input values"):
+    with st.expander("CHaMP Regression input values"):
         st.dataframe(pd.DataFrame([
             {"Input": label, "Value": reach.get(field), "Units": unit}
             for label, field, unit in (("Bankfull width", "bfWidth", "m"),
@@ -273,6 +275,10 @@ def workspace(network, curve, monthly, summary, months, cfs, signature):
     if st.session_state.get("_overview_signature") != signature:
         st.session_state._overview_signature = signature
         st.session_state._evaluated_reaches = {}
+        st.session_state._plot_choices = {}
+        for key in list(st.session_state):
+            if key.startswith("plot-"):
+                st.session_state.pop(key, None)
     allowed_ids = {r["id"] for r in features}
     if st.session_state.get("selected_id") not in allowed_ids:
         st.session_state.selected_id = None
@@ -373,7 +379,8 @@ def diagnostics_panel(reach, monthly, summary, months, cfs, curve, metadata):
     payload = gift_diagnostics(reach, monthly, summary, months, curve, metadata)
     with st.expander("GIFT inputs and unavailable-result diagnostics", expanded=True):
         st.markdown(f"**{reach['name']} (COMID: {reach['id']})**")
-        st.caption(f"Hydraulic model: {reach['modelStatus']} · Period: {STATUS_LABELS.get(summary.status, summary.status)}")
+        source_label = "Selected plot" if reach.get("plotInputs") else "CHaMP Regression"
+        st.caption(f"{source_label} · Hydraulic model: {reach['modelStatus']} · Period: {STATUS_LABELS.get(summary.status, summary.status)}")
         factor, flow_unit = (CFS_PER_M3S, "cfs") if cfs else (1.0, "m³/s")
         definitions = [
             ("Bankfull width", "bfWidth", "m", True),
@@ -391,13 +398,19 @@ def diagnostics_panel(reach, monthly, summary, months, cfs, curve, metadata):
         for label, field, unit, required in definitions:
             value = payload["input_parameters"][field]
             missing = value is None or not np.isfinite(value)
-            status = ("Missing required input" if required else "Unavailable") if missing else (
+            if field == "maxDepth" and reach.get("plotInputs") and not reach["plotInputs"]["maximum_depth_supplied"]:
+                required = False
+                status = "Not supplied for this plot"
+            else:
+                status = ("Missing required input" if required else "Unavailable") if missing else (
                 "Invalid: must be positive" if required and value <= 0 else "Available")
             shown = value * factor if not missing and field in ("qMin", "qMax") else value
             parameters.append(dict(Parameter=label, Value="Unavailable" if missing else f"{shown:.6g}",
                                    Units=unit, Status=status))
         st.dataframe(pd.DataFrame(parameters), hide_index=True, width="stretch")
-        st.caption(f"Active curves: {curve['label']}. Shape factor = 1 - mean bankfull depth / maximum bankfull depth; no cap is applied.")
+        shape_method = ("1 - mean bankfull depth / maximum bankfull depth" if reach.get("maxDepth") is not None
+                        else "(bankfull width / mean bankfull depth) / 100")
+        st.caption(f"Active curves: {curve['label']}. Shape factor = {shape_method}; no cap is applied.")
         curve_ranges = [
             {"Curve": "Depth", "Input range": f"{min(r[0] for r in curve['depth']):.6g} to {max(r[0] for r in curve['depth']):.6g}", "Units": "m"},
             {"Curve": "Velocity", "Input range": f"{min(r[0] for r in curve['velocity']):.6g} to {max(r[0] for r in curve['velocity']):.6g}", "Units": "m/s"},
@@ -412,6 +425,62 @@ def diagnostics_panel(reach, monthly, summary, months, cfs, curve, metadata):
                            f"gift_{reach['id']}_diagnostics.json", mime="application/json", on_click="ignore")
 
 
+def remember_plot_input(comid, field, key):
+    st.session_state._plot_choices.setdefault(comid, {})[field] = st.session_state[key]
+
+
+def reset_plot_inputs(reach):
+    comid = reach["id"]
+    st.session_state._plot_choices[comid] = default_plot_settings(reach)
+    for field in default_plot_settings(reach):
+        st.session_state.pop(f"plot-{comid}-{field}", None)
+
+
+def plot_controls(reach):
+    """Persist independent plot choices by COMID, including hidden custom inputs."""
+    comid = reach["id"]
+    st.session_state.setdefault("_plot_choices", {})
+    choices = st.session_state._plot_choices.setdefault(comid, default_plot_settings(reach))
+    with st.expander("Adjust selected-segment hydraulics", expanded=True):
+        st.caption("These inputs apply to this segment's response curves and monthly plot results. "
+                   "The network map and comparisons use CHaMP Regression.")
+        columns = st.columns(2)
+        for col, kind, label, field in ((columns[0], "width", "Bankfull width", "bfWidth"),
+                                        (columns[1], "depth", "Mean bankfull depth", "bfDepth")):
+            with col:
+                name, key = kind+"_source", f"plot-{comid}-{kind}_source"
+                st.session_state.setdefault(key, choices[name])
+                st.selectbox(label+" source", BANKFULL_OPTIONS, key=key,
+                             on_change=remember_plot_input, args=(comid, name, key))
+                choices[name] = st.session_state[key]
+                if choices[name] == CUSTOM:
+                    name, key = "custom_"+kind, f"plot-{comid}-custom_{kind}"
+                    value = choices.get(name)
+                    value = float(value) if value is not None and np.isfinite(value) else 0.
+                    st.session_state.setdefault(key, value)
+                    st.number_input(label+" for plotting (m)", min_value=0., step=.01,
+                                    format="%.4f", key=key,
+                                    on_change=remember_plot_input, args=(comid, name, key))
+                    choices[name] = st.session_state[key]
+        slope_key = f"plot-{comid}-slope"
+        slope = choices.get("slope")
+        st.session_state.setdefault(slope_key, float(slope) if slope is not None and np.isfinite(slope) else 0.)
+        slope_col, reset_col = st.columns([2, 1])
+        slope_col.number_input("Slope for plotting (m/m)", min_value=0., step=.0001,
+                               format="%.7f", key=slope_key,
+                               on_change=remember_plot_input, args=(comid, "slope", slope_key))
+        choices["slope"] = st.session_state[slope_key]
+        reset_col.button("Reset plot inputs", key=f"reset-plot-{comid}", width="stretch",
+                         on_click=reset_plot_inputs, args=(reach,))
+        region = getattr(settings, "BIEGER_REGION", "IMP")
+        for note in regression_notes(reach, choices, region):
+            st.caption(note)
+        if choices["width_source"] != CHAMP or choices["depth_source"] != CHAMP:
+            st.caption("Maximum bankfull depth is not supplied. GIFT estimates shape factor from "
+                       "(bankfull width / mean bankfull depth) / 100.")
+    return plot_reach(reach, choices, region)
+
+
 @st.fragment
 def flow_panel(reach, selected_monthly, months, cfs, curve_json, signature):
     """Tab switches update the flow panel without redrawing the map."""
@@ -419,6 +488,28 @@ def flow_panel(reach, selected_monthly, months, cfs, curve_json, signature):
     detail = st.session_state.inspect_month
     st.subheader("Habitat response to flow")
     st.caption(f"{reach['name']} (COMID: {selected_id}) · {json.loads(curve_json)['label']}")
+    try:
+        adjusted = plot_controls(reach)
+    except (ValueError, KeyError) as exc:
+        st.error(f"Plot inputs: {exc}")
+        st.info("A flow-response curve is unavailable because this segment has missing hydraulic inputs "
+                "or invalid plot values. Choose another regression or enter positive custom values.")
+        return
+    parameters = hydraulic_parameters(adjusted)
+    try:
+        hyd = cached_hydraulics(selected_id, parameters, hydraulic_model_signature())
+    except ValueError as exc:
+        st.error(f"Plot inputs: {exc}")
+        return
+    reach = reach_with_hydraulics(adjusted, hyd)
+    selected_monthly = cached_reach_monthly(selected_id, curve_json, parameters,
+        hydraulic_model_signature(), tuple(row[0] for row in reach["months"]), reach.get("summerWidth"), reach)
+    a, b, c, d = st.columns(4)
+    a.metric("Plot bankfull width (m)", number(reach["bfWidth"]))
+    b.metric("Plot mean bankfull depth (m)", number(reach["bfDepth"]))
+    c.metric("Plot slope (m/m)", f"{reach['slope']:.6g}")
+    factor, unit = (CFS_PER_M3S, "cfs") if cfs else (1., "m³/s")
+    d.metric(f"Plot bankfull flow ({unit})", number(reach.get("qMax")*factor if reach.get("qMax") is not None else None))
     native = cached_native(selected_id, curve_json, hydraulic_parameters(reach),
                            hydraulic_model_signature(), reach.get("summerWidth"), reach)
     if native.empty:
@@ -437,9 +528,9 @@ def flow_panel(reach, selected_monthly, months, cfs, curve_json, signature):
             st.dataframe(monthly_display(selected_rows, cfs), hide_index=True, width="stretch")
             st.caption("Raw values refer to each listed month's exact flow; component suitability incorporates GIFT's within-reach distributions.")
             export = selected_rows.drop(columns=["summer_width", "normalized"]).rename(columns={"id":"COMID", "q":"EROM_Q_m3s", "depth":"mean_depth_m", "velocity":"mean_velocity_m_s", "width":"wetted_width_m", "wua":"WUA_m2_per_m"})
-            st.download_button("Download monthly results (SI units)", csv_bytes(export), f"gift_{selected_id}_monthly.csv", mime="text/csv", on_click="ignore")
+            st.download_button("Download monthly results (SI units)", csv_bytes(plot_export(export, reach)), f"gift_{selected_id}_monthly.csv", mime="text/csv", on_click="ignore")
             if not native.empty:
-                st.download_button("Download full flow-response curve (SI units)", csv_bytes(native.drop(columns=["normalized"]).rename(columns={"q":"Q_m3s","depth":"mean_depth_m","velocity":"mean_velocity_m_s","width":"wetted_width_m","wua":"WUA_m2_per_m"})), f"gift_{selected_id}_flow_curve.csv", mime="text/csv", on_click="ignore")
+                st.download_button("Download full flow-response curve (SI units)", csv_bytes(plot_export(native.drop(columns=["normalized"]).rename(columns={"q":"Q_m3s","depth":"mean_depth_m","velocity":"mean_velocity_m_s","width":"wetted_width_m","wua":"WUA_m2_per_m"}), reach)), f"gift_{selected_id}_flow_curve.csv", mime="text/csv", on_click="ignore")
 
 
 @st.fragment
@@ -489,8 +580,20 @@ mean depth, slope, D84, and monthly flows come from the configured streams layer
 Maximum depth and priority use their configured ID joins. Temperature uses the
 explicitly configured streams or priority source. Missing values remain unavailable.
 
-**Hydraulics and habitat.** Shape factor is
+**Hydraulics and habitat.** The network uses **CHaMP Regression** inputs. Its shape factor is
 `1 - mean bankfull depth / maximum bankfull depth`, without capping.
+Selected-segment plots have independent width/depth sources: CHaMP Regression,
+Bieger National, Bieger Regional, Castro and Jackson 2001, or custom values.
+Slope can be changed for the selected plot. Plot choices are saved separately
+for each segment in the current session and do not replace network scores.
+Alternative or custom width/depth omits maximum bankfull depth; GIFT then uses
+`(bankfull width / mean bankfull depth) / 100` for its shape factor.
+The Bieger Regional division is configured by `BIEGER_REGION` in settings.py
+(Intermontane Plateau for this network). Castro and Jackson uses the Western
+Cordillera drainage-area relationships verified against USGS StreamStats,
+converting feet and mi² to SI.
+The equations are shown with the plot controls, and selected-segment downloads
+record the active width/depth sources, geometry, and slope.
 Selecting a segment runs the original Python GIFT model for that segment and
 caches its hydraulic solution. The map overview uses the bundled monthly
 hydraulics where the source inputs still match. Mean depth,
