@@ -16,7 +16,7 @@ import habitat_engine as engine
 from bankfull_regressions import (BANKFULL_OPTIONS, BIEGER_NATIONAL, BIEGER_REGIONAL,
     CASTRO_JACKSON, CHAMP, CUSTOM, KM2_PER_MI2, default_plot_settings, plot_export,
     plot_reach, predict_bankfull)
-from test_app import send_map_selection
+from test_app import champ_app, send_map_selection
 from test_on_demand import counted_solves
 
 
@@ -100,7 +100,7 @@ def test_ui_network_regressions_apply_to_every_reach_and_reuse_physics(counted_s
     ids = {23428544, 23428378}
     network = dict(network, features=[r for r in network["features"] if r["id"] in ids])
     monkeypatch.setattr(runtime_data, "load_runtime_dataset", lambda config: (copy.deepcopy(network), curves))
-    at = AppTest.from_file(ROOT / "app.py", default_timeout=30).run()
+    at = champ_app().run()
     assert not at.exception and counted_solves == []
     assert at.selectbox(key="network_width_source").value == CHAMP
     at.selectbox(key="network_depth_source").set_value(BIEGER_NATIONAL).run()
@@ -124,6 +124,7 @@ def test_ui_network_regressions_apply_to_every_reach_and_reuse_physics(counted_s
 def test_ui_custom_inputs_persist_and_never_change_network_map(counted_solves):
     at = AppTest.from_file(ROOT / "app.py", default_timeout=30).run()
     send_map_selection(at, 23428544)
+    default_depth = at.number_input(key="plot-23428544-custom_depth").value
     before_map = at.get("deck_gl_json_chart")[0].proto.json
     for kind, value in (("depth", .9), ("width", 35.), ("slope", .005), ("d84", 90.)):
         at.number_input(key=f"plot-23428544-custom_{kind}").set_value(value).run()
@@ -142,7 +143,7 @@ def test_ui_custom_inputs_persist_and_never_change_network_map(counted_solves):
     before_reset = len(counted_solves)
     at.button(key="reset-plot-23428544").click().run()
     assert not at.exception and not at.error
-    assert at.number_input(key="plot-23428544-custom_depth").value == pytest.approx(.54768363737265)
+    assert at.number_input(key="plot-23428544-custom_depth").value == pytest.approx(default_depth)
     assert len(counted_solves) == before_reset  # Original solution is reused.
 
 

@@ -8,6 +8,14 @@ from streamlit.testing.v1 import AppTest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 from habitat_engine import load_dataset
+from bankfull_regressions import CHAMP
+
+
+def champ_app():
+    """Use the bundled CHaMP overview for tests of its source-input behavior."""
+    at = AppTest.from_file(ROOT / "app.py", default_timeout=30)
+    at.session_state.network_depth_source = CHAMP
+    return at
 
 
 def send_map_selection(at, comid):
@@ -65,7 +73,7 @@ def test_default_and_life_stage_controls():
     assert at.selectbox(key="inspect_month").options == ["November","December","January","February"]
     at.checkbox(key="require_all").uncheck().run()
     at.radio(key="network_layer").set_value("Temperature Suitability").run()
-    at.selectbox(key="map_metric").set_value("wua").run()
+    at.button_group(key="map_metric").set_value("wua").run()
     at.selectbox(key="basemap").set_value("Satellite").run()
     at.radio(key="flow_units").set_value("cfs").run()
     assert not at.exception
@@ -118,7 +126,7 @@ def test_map_selection_reuses_network_records_and_updates_results(monkeypatch):
     at.selectbox(key="basemap").set_value("Satellite").run()
     assert not at.exception
     assert len(calls) == 1
-    at.selectbox(key="map_metric").set_value("wua").run()
+    at.button_group(key="map_metric").set_value("wua").run()
     assert not at.exception
     assert len(calls) == 2
     at.selectbox(key="end_month").set_value(10).run()
@@ -155,10 +163,10 @@ def test_only_open_plot_tabs_and_result_table_are_rendered():
 
 
 def test_requested_controls_and_missing_input_diagnostics():
-    at = AppTest.from_file(ROOT / "app.py", default_timeout=30).run()
+    at = champ_app().run()
     assert not at.exception
     assert "reach_search" not in {s.key for s in at.selectbox}
-    assert at.selectbox(key="map_metric").options == ["HSI", "WUA"]
+    assert at.button_group(key="map_metric").options == ["HSI", "WUA"]
     assert not any("Three perspectives" in s.value for s in at.subheader)
     send_map_selection(at, 23429096)
     assert not at.exception
@@ -171,7 +179,7 @@ def test_requested_controls_and_missing_input_diagnostics():
 def test_click_each_comparison_updates_map_and_inspector():
     at = AppTest.from_file(ROOT / "app.py", default_timeout=30).run()
     assert not at.exception
-    for comparison in ("Temperature suitability", "Provisional Model priority", "Depth suitability", "Velocity suitability"):
+    for comparison in ("Temperature suitability", "Provisional Model priority", "Depth suitability", "Velocity suitability", "Substrate suitability"):
         at.session_state.comparison_tabs = comparison
         at.run()
         assert not at.exception
@@ -189,8 +197,9 @@ def test_click_each_comparison_updates_map_and_inspector():
         deck = json.loads(at.get("deck_gl_json_chart")[0].proto.json)
         selected = next(layer for layer in deck["layers"] if layer["id"] == "selected")
         assert {r["comid"] for r in selected["data"]} == {comid}
-    # The comparison always uses HSI, independently of the map's WUA setting.
-    at.selectbox(key="map_metric").set_value("wua").run()
+    # The comparison metric is controlled independently of the map's setting.
+    at.run()
+    at.button_group(key="map_metric").set_value("wua").run()
     assert not at.exception
-    chart = next(p.proto for p in at.get("plotly_chart") if p.proto.id.endswith("-comparison-Velocity suitability"))
+    chart = next(p.proto for p in at.get("plotly_chart") if p.proto.id.endswith("-comparison-Substrate suitability"))
     assert json.loads(chart.spec)["layout"]["yaxis"]["title"]["text"] == "HSI"

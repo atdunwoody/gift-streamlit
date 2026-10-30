@@ -18,11 +18,10 @@ ROOT = Path(__file__).resolve().parents[1]
 MONTHS = "jan feb mar apr may jun jul aug sep oct nov dec".split()
 GROUPS = [
     ("chinook_juvenile_rearing", "Chinook · Juvenile rearing", 7),
-    ("chinook_spawning_stream_river", "Chinook · Spawning, stream / river", 8),
-    ("chinook_spawning_large_river", "Chinook · Spawning, large river", 8),
+    ("chinook_spawning_stream_river", "Chinook - Spawning", 8),
     ("steelhead_juvenile_rearing", "Steelhead · Juvenile rearing", 7),
     ("steelhead_spawning", "Steelhead · Spawning", 3),
-    ("salmonid_general_sensitivity", "General salmonid · Sensitivity scenario", 7),
+    ("salmonid_general_sensitivity", "General salmonid", 7),
 ]
 
 sys.path.insert(0, str(ROOT / "model"))

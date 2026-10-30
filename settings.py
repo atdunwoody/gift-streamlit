@@ -72,12 +72,10 @@ DEFAULT_PERIODS = {
         note="Late-summer rearing assessment. Juveniles also rear outside this season; adjust for the study objective."),
     "chinook_spawning_stream_river": dict(start=8, end=9, source=HGMP,
         note="Upper Grande Ronde spring/summer Chinook spawning; does not represent fall Chinook timing."),
-    "chinook_spawning_large_river": dict(start=8, end=9, source=HGMP,
-        note="Upper Grande Ronde spring/summer Chinook spawning; adjust for other stocks."),
     "steelhead_juvenile_rearing": dict(start=7, end=9, source=SUBBASIN,
         note="Late-summer rearing assessment. Steelhead juveniles rear across multiple seasons and years."),
     "steelhead_spawning": dict(start=3, end=6, source=HGMP,
         note="Basin spawning window, March into June. Monthly means approximate partial-month endpoints."),
     "salmonid_general_sensitivity": dict(start=7, end=9, source="",
-        note="Late-summer sensitivity scenario, not a calibrated species or life-stage timing window."),
+        note="Late-summer assessment period, not a calibrated species or life-stage timing window."),
 }

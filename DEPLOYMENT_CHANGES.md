@@ -1,3 +1,23 @@
+# Habitat controls and spawning curves, 2026-10-30
+
+The app now offers one Chinook spawning option, **Chinook - Spawning**, using
+the supplied stream/river curves. **General salmonid** replaces the sensitivity
+scenario label. Existing large-river Chinook selections move to the stream/river
+option when the app reruns.
+
+The default geometry is CHaMP bankfull width with Castro and Jackson mean
+bankfull depth. Its first load calculates and caches that network scenario.
+HSI/WUA metric buttons sit beside the regression selectors directly above the
+map. Mean-map mode supports either metric and labels its switch accordingly.
+The comparison panel has its own **Plot WUA** switch, off for HSI and on for WUA,
+and includes a new substrate-suitability comparison. The five comparisons retain
+click-to-select behavior. See `README.md` and `HYDRAULIC_OPTIONS.md` for details.
+
+The prepared CHaMP overview retains its original hydraulic values. Its active
+curve definitions and provenance were updated. No dependencies or hydraulic
+equations changed. The older startup notes below describe earlier defaults;
+zero startup solves now applies when CHaMP is selected for both dimensions.
+
 # Plot controls and supplied defaults, 2026-10-26
 
 Width/depth regressions and the mean-HSI switch now sit above the map. Icon

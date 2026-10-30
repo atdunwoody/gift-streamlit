@@ -14,8 +14,8 @@ from streamlit.testing.v1 import AppTest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 import habitat_engine as engine
-from bankfull_regressions import (BIEGER_NATIONAL, CHAMP, apply_plot_overrides,
-                                 default_overrides, plot_export)
+from bankfull_regressions import (BIEGER_NATIONAL, CASTRO_JACKSON, CHAMP, apply_plot_overrides,
+                                 default_overrides, network_reach, plot_export)
 from curve_presets import gift_shiny_default
 from network_scenarios import build_network_solution, full_curve_mean
 from presentation import flow_figure
@@ -65,6 +65,7 @@ def test_explicit_maximum_depth_controls_plot_shape_and_can_be_cleared(small_net
 def test_inputs_are_prefilled_editable_and_restore_all_segment_defaults(small_network, counted_solves):
     network, _ = small_network
     reach = next(r for r in network['features'] if r['id'] == 23428544)
+    reach = network_reach(reach, CHAMP, CASTRO_JACKSON)
     at = AppTest.from_file(ROOT/'app.py',default_timeout=30).run()
     send_map_selection(at, reach['id'])
     assert not [w for w in at.toggle if w.key.startswith('plot-')]

@@ -12,7 +12,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from bankfull_regressions import (CHAMP, NETWORK_BANKFULL_OPTIONS, apply_plot_overrides,
+from bankfull_regressions import (CASTRO_JACKSON, CHAMP, NETWORK_BANKFULL_OPTIONS, apply_plot_overrides,
                                  default_overrides, plot_export, regression_notes)
 from curve_presets import gift_shiny_default
 from habitat_engine import (CFS_PER_M3S, MONTHS, STATUS_LABELS, aggregate_period,
@@ -120,7 +120,7 @@ def map_content(features, summary, layer, metric, view_key):
                        records=map_records(features, summary, layer, metric, high, palette),
                        allowed=frozenset(r["id"] for r in features),
                        views={None: map_view(features)},
-                       valid_count=int(summary.hsi.notna().sum()))
+                       valid_count=int(summary[metric].notna().sum()))
         st.session_state._map_content = content
     return content
 
@@ -202,6 +202,9 @@ def sidebar(curves):
     with st.sidebar:
         st.markdown("### GIFT\nHabitat Explorer")
         st.caption("UPPER GRANDE RONDE · EROM NETWORK")
+        if st.session_state.get("stage") == "chinook_spawning_large_river":
+            st.session_state.stage = "chinook_spawning_stream_river"
+            stage_changed(curves)
         if "stage" not in st.session_state:
             st.session_state.stage = curves[0]["id"]
             apply_defaults(curves[0])
@@ -265,7 +268,8 @@ def sidebar(curves):
             st.caption("Ranges include both endpoints and can cross December.")
         st.button("Restore life-stage default", on_click=stage_changed, args=(curves,), width="stretch", disabled=mean_hsi)
         if mean_hsi:
-            st.caption("Monthly flow selections are inactive while mean HSI is mapped.")
+            metric_label = st.session_state.get("map_metric", "hsi").upper()
+            st.caption(f"Monthly flow selections are inactive while mean {metric_label} is mapped.")
         st.caption(curve.get("periodNote", "Editable assessment period."))
         if curve.get("periodSource"):
             st.markdown(f"[Timing reference]({curve['periodSource']})")
@@ -276,16 +280,26 @@ def sidebar(curves):
     return curve, months, require_all, cfs
 
 
+def map_layer_controls():
+    layer, basemap = st.columns([4, 1])
+    layer.radio("Network Layer", ["GIFT habitat", "Temperature Suitability", "Provisional Priority"],
+                horizontal=True, key="network_layer")
+    basemap.selectbox("Basemap", ["Light", "Dark", "Satellite"], key="basemap")
+
+
 def network_controls():
     """Full-app widgets above the map also update disabled sidebar controls."""
     with st.container(key="network-controls", border=True):
-        width, depth, mean = st.columns([1, 1, 1.1], vertical_alignment="bottom")
+        width, depth, metric, mean = st.columns([1, 1, .7, .9], vertical_alignment="bottom")
         width.selectbox("Bankfull width regression", NETWORK_BANKFULL_OPTIONS, key="network_width_source")
-        depth.selectbox("Bankfull depth regression", NETWORK_BANKFULL_OPTIONS, key="network_depth_source")
-        mean.toggle("Map mean HSI", value=False, key="mean_hsi",
-                    help="Off: median habitat at selected monthly flows. On: each segment's mean HSI "
+        depth.selectbox("Bankfull depth regression", NETWORK_BANKFULL_OPTIONS,
+                        index=NETWORK_BANKFULL_OPTIONS.index(CASTRO_JACKSON), key="network_depth_source")
+        metric.segmented_control("Habitat metric", ["hsi", "wua"], default="hsi", required=True,
+                                 format_func=str.upper, key="map_metric")
+        label = st.session_state.map_metric.upper()
+        mean.toggle(f"Map mean {label}", value=False, key="mean_hsi",
+                    help=f"Off: median habitat at selected monthly flows. On: each segment's mean {label} "
                          "over its full modeled flow curve, without flow-duration weighting.")
-        st.caption("Regressions apply to every segment. Individual plot edits do not change map values.")
 
 
 def fit_network():
@@ -422,40 +436,15 @@ def workspace(network, curve, monthly, summary, months, cfs, signature, mean_hsi
     network = dict(network, features=features,
                    metadata=dict(network["metadata"], pendingHydraulics=pending))
     mapping_summary = summary
-    a, b, c = st.columns([3, 1.25, 1])
-    layer = a.radio("Network Layer", ["GIFT habitat", "Temperature Suitability", "Provisional Priority"], horizontal=True, key="network_layer")
-    metric_labels = {"hsi":"HSI", "wua":"WUA"}
-    if st.session_state.get("map_metric", "hsi") not in metric_labels:
-        st.session_state.map_metric = "hsi"
-    if mean_hsi:
-        if "map_metric" in st.session_state:
-            st.session_state._range_map_metric = st.session_state.map_metric
-        metric = "hsi"
-        b.caption("Habitat metric: mean HSI")
-    else:
-        if "map_metric" not in st.session_state:
-            st.session_state.map_metric = st.session_state.get("_range_map_metric", "hsi")
-        metric = b.selectbox("Habitat metric", list(metric_labels), format_func=metric_labels.get, key="map_metric")
-        st.session_state._range_map_metric = metric
-    basemap = c.selectbox("Basemap", ["Light", "Dark", "Satellite"], key="basemap")
+    layer = st.session_state.network_layer
+    metric = st.session_state.map_metric
+    basemap = st.session_state.basemap
+    metric_label = metric.upper()
     if st.session_state.get("view_focus") not in allowed_ids:
         st.session_state.view_focus = None
     content = map_content(features, mapping_summary, layer, metric,
                           (signature, curve_json, tuple(months), bool(summary.requireAll.iloc[0]),
                            layer, metric, overview_revision))
-    map_basis = "Mean HSI across the full modeled flow curve" if mean_hsi else period_label(months)
-    st.caption(f"{curve['label']} · {map_basis} · {content['valid_count']}/{len(features)} segments with habitat results")
-    st.caption(f"Network width: {signature[1]} · Network depth: {signature[2]}")
-    if mean_hsi:
-        st.caption("Mean HSI is the area under each segment's HSI–discharge curve divided by its modeled "
-                   "discharge range, estimated from 201 equally spaced flows. Selected months do not "
-                   "affect the map or plots. Gold diamonds show the full-curve means.")
-    if pending:
-        st.info(f"{len(pending)} segments await habitat calculation. Select a segment to calculate it; gray values are unavailable until evaluated.")
-    if layer == "Temperature Suitability":
-        st.info("Temperature scores describe juvenile-salmon suitability under the supplied interpretation of See et al. (2021) using NoRWeST mean August stream temperature. They do not change with the selected life stage or month.")
-    elif layer == "Provisional Priority":
-        st.info("Provisional Model stream segment restoration priority")
     left, right = st.columns([2.6, 1], gap="large")
     with left:
         focus = st.session_state.get("view_focus")
@@ -475,8 +464,21 @@ def workspace(network, curve, monthly, summary, months, cfs, signature, mean_hsi
         colors = legend_gradient(content["palette"])
         st.markdown(f'<div class="legend"><span>{content["title"]} &nbsp; 0</span><div style="background:linear-gradient(90deg,{colors})"></div><span>{number(content["high"])}</span></div>', unsafe_allow_html=True)
         st.caption(potential_maximum_note(layer, metric))
+        map_basis = f"Mean {metric_label} across the full modeled flow curve" if mean_hsi else period_label(months)
+        st.caption(f"{curve['label']} · {map_basis} · {content['valid_count']}/{len(features)} segments with habitat results")
+        st.caption(f"Network width: {signature[1]} · Network depth: {signature[2]}. "
+                   "Regressions apply to every segment. Individual plot edits do not change map values.")
+        if mean_hsi:
+            st.caption(f"Mean {metric_label} is the area under each segment's {metric_label}–discharge curve divided by its modeled "
+                       "discharge range, estimated from 201 equally spaced flows. Selected months do not "
+                       "affect the map or plots. Gold diamonds show the full-curve means.")
+        if pending:
+            st.info(f"{len(pending)} segments await habitat calculation. Select a segment to calculate it; gray values are unavailable until evaluated.")
         if layer == "Temperature Suitability":
+            st.info("Temperature scores describe juvenile-salmon suitability under the supplied interpretation of See et al. (2021) using NoRWeST mean August stream temperature. They do not change with the selected life stage or month.")
             st.caption("Temperature colors place tan at 80% of the observed maximum to distinguish higher suitability scores.")
+        elif layer == "Provisional Priority":
+            st.info("Provisional Model stream segment restoration priority")
         st.caption("Higher values → greater suitability or priority. Gray = unavailable map value. Gold = selected segment. Select a reach on the map or in a comparison plot.")
     with right:
         if reach is None:
@@ -701,18 +703,22 @@ def flow_panel(reach, selected_monthly, months, cfs, curve_json, signature, mean
 @st.fragment
 def comparison_panel(features, summary, selected_id, curve_json, months, signature, overview_revision=0, mean_hsi=False):
     st.divider()
-    st.subheader("HSI comparisons")
-    basis = "mean HSI across each segment's full modeled flow curve" if mean_hsi else "the selected months"
-    st.caption(f"Click a dot to select and locate its reach on the map. Values summarize {basis}; the HSI axis follows the observed maximum.")
+    use_wua = st.toggle("Plot WUA", value=False, key="comparison_wua",
+                        help="Off: plot HSI. On: plot WUA (m²/m). This controls all comparison graphs.")
+    metric = "wua" if use_wua else "hsi"
+    label = metric.upper()
+    st.subheader(f"{label} comparisons")
+    basis = f"mean {label} across each segment's full modeled flow curve" if mean_hsi else "the selected months"
+    st.caption(f"Click a dot to select and locate its reach on the map. Values summarize {basis}; the {label} axis follows the observed maximum.")
     comparisons = list(COMPARISON_FIELDS)
     tabs = st.tabs(comparisons, key="comparison_tabs", on_change="rerun")
     for tab, comparison in zip(tabs, comparisons):
         if tab.open:
             with tab:
                 base = cached_comparison(curve_json, signature, tuple(months), bool(summary.requireAll.iloc[0]),
-                                         "hsi", comparison, features, summary, overview_revision)
-                figure, count = comparison_figure(features, summary, "hsi", comparison, selected_id, base=base)
-                key = f"selection-{st.session_state.selection_revision}-comparison-{comparison}"
+                                         metric, comparison, features, summary, overview_revision)
+                figure, count = comparison_figure(features, summary, metric, comparison, selected_id, base=base)
+                key = f"selection-{st.session_state.selection_revision}-{metric}-comparison-{comparison}"
                 allowed = frozenset(r["id"] for r in features)
                 st.plotly_chart(figure, width="stretch", key=key, selection_mode="points",
                                 on_select=lambda key=key, allowed=allowed: comparison_selected(key, allowed))
@@ -725,8 +731,9 @@ def network_downloads(network, summary, curve, months, require_all, signature, o
     export = cached_network_csv(json.dumps(curve, sort_keys=True), signature, tuple(months),
                                 require_all, features, summary, network["metadata"], overview_revision)
     full_mean = "aggregation" in summary and summary.aggregation.eq("full_curve_mean").all()
-    download_label = "Download network mean-HSI summary (CSV)" if full_mean else "Download network period summary (CSV)"
-    filename = "gift_network_mean_hsi_summary.csv" if full_mean else "gift_network_period_summary.csv"
+    metric = st.session_state.map_metric
+    download_label = f"Download network mean-{metric.upper()} summary (CSV)" if full_mean else "Download network period summary (CSV)"
+    filename = f"gift_network_mean_{metric}_summary.csv" if full_mean else "gift_network_period_summary.csv"
     st.download_button(download_label, export, filename, mime="text/csv", on_click="ignore")
     with st.expander("Coverage and input notes"):
         status_counts = summary.status.value_counts().rename_axis("Status").reset_index(name="Segments")
@@ -755,7 +762,8 @@ explicitly configured streams or priority source. Missing values remain unavaila
 
 **Hydraulics and habitat.** The controls above the map select independent bankfull width and
 depth regressions for every segment: CHaMP Regression, Bieger 2015 National,
-Bieger 2015 Regional, or Castro and Jackson 2001. CHaMP is the default and uses
+Bieger 2015 Regional, or Castro and Jackson 2001. The defaults are CHaMP width
+and Castro and Jackson mean depth. Using CHaMP for both dimensions uses
 `1 - mean bankfull depth / maximum bankfull depth` for its shape factor.
 Selected-segment plots can override width, mean depth, slope, and D84.
 Plot overrides are saved separately for each segment and do not replace network scores.
@@ -801,9 +809,9 @@ derived computations use a bounded server cache. Full app reruns check the sourc
 files, field mappings, units, curves, and calculation code before using prepared data.
 Changed inputs refresh the stream attributes. Segments needing new hydraulics
 are evaluated when selected, and their results are added to the map and export.
-Default startup does not rebuild hydraulic curves for the network.
-Alternative network regressions are solved and cached when selected.
-Mean-HSI mode averages each segment's full response curve over discharge,
+Network regressions that differ from the bundled CHaMP overview are solved
+and cached, including the default CHaMP-width/Castro-and-Jackson-depth scenario.
+Mean-map mode averages each segment's full HSI or WUA response curve over discharge,
 using 201 equally spaced flows and trapezoidal integration divided by the
 modeled discharge range. It is not weighted by flow duration. The default map
 continues to show the median result at the selected monthly flows.
@@ -860,6 +868,7 @@ def main():
     st.session_state.setdefault("selection_revision", 0)
     curve, months, require_all, cfs = sidebar([*curves, gift_shiny_default()])
     st.session_state.current_curve = curve
+    map_layer_controls()
     network_controls()
     signature = (sources, st.session_state.network_width_source, st.session_state.network_depth_source,
                  getattr(settings, "BIEGER_REGION", "IMP"), hydraulic_model_signature())
@@ -868,7 +877,7 @@ def main():
         with st.spinner("Calculating network geometry for the selected regressions…"):
             network = cached_network_solution(signature)[0] if mean_hsi else cached_geometry(signature)
     if mean_hsi:
-        with st.spinner("Averaging HSI over each segment's modeled flow curve…"):
+        with st.spinner("Averaging habitat over each segment's modeled flow curve…"):
             summary = cached_full_curve_summary(json.dumps(curve, sort_keys=True), signature)
         monthly = None
     else:

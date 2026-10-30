@@ -1,7 +1,8 @@
 """Network regression scenarios and a uniformly sampled full-flow mean.
 
-These functions run only when the user requests an alternative network
-regression or enables full-flow averaging. Default startup uses the overview.
+These functions solve and cache network regressions and full-flow means.
+The app defaults to CHaMP width and Castro and Jackson mean depth; choosing
+CHaMP for both dimensions can use the bundled monthly overview.
 """
 from __future__ import annotations
 

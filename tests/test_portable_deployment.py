@@ -20,7 +20,7 @@ def test_bundled_data_is_current(monkeypatch):
     assert runtime_data.runtime_signature(config)[0] == manifest["fingerprint"]
     network, curves = runtime_data.load_runtime_dataset(config)
     assert len(network["features"]) == 728
-    assert len(curves) == 6
+    assert len(curves) == 5
     assert not network["metadata"].get("pendingHydraulics")
 
 

@@ -19,7 +19,7 @@ from bankfull_regressions import (CHAMP, CUSTOM, BIEGER_NATIONAL, BIEGER_REGIONA
 from network_scenarios import build_network_solution, full_curve_mean, full_curve_summary
 from presentation import (TEMP_PALETTE, TEMP_STOPS, channel_geometry_figure,
                           legend_gradient, rgb)
-from test_app import send_map_selection
+from test_app import champ_app, send_map_selection
 from test_on_demand import counted_solves
 
 
@@ -104,7 +104,7 @@ def test_flow_mean_sampling_convergence(small_network):
     network, curves = small_network
     result, hyd = build_network_solution(network, BIEGER_NATIONAL, BIEGER_NATIONAL)
     for reach in result["features"]:
-        for curve in (curves[0], curves[4]):
+        for curve in (curves[0], next(c for c in curves if c["id"] == "steelhead_spawning")):
             coarse = full_curve_mean(reach, hyd[reach["id"]], curve)
             fine = full_curve_mean(reach, hyd[reach["id"]], curve, samples=1001)
             assert abs(coarse["hsi"]-fine["hsi"]) < .003
@@ -134,8 +134,8 @@ def test_temperature_tan_position_matches_map_and_legend():
 def test_mean_map_toggle_is_off_by_default_and_ignores_selected_months(small_network, counted_solves):
     at = AppTest.from_file(ROOT / "app.py", default_timeout=30).run()
     assert not at.exception and not at.toggle(key="mean_hsi").value
-    assert counted_solves == []
-    at.selectbox(key="map_metric").set_value("wua").run()
+    assert len(counted_solves) == 2  # Default CHaMP width / Castro and Jackson depth.
+    at.button_group(key="map_metric").set_value("wua").run()
     at.toggle(key="mean_hsi").set_value(True).run()
     assert not at.exception and not at.error
     assert len(counted_solves) == 2
@@ -155,7 +155,7 @@ def test_mean_map_toggle_is_off_by_default_and_ignores_selected_months(small_net
     assert not at.exception and len(counted_solves) == 2
     at.toggle(key="mean_hsi").set_value(False).run()
     assert "months" in at.get("deck_gl_json_chart")[0].proto.json
-    assert at.selectbox(key="map_metric").value == "wua"
+    assert at.button_group(key="map_metric").value == "wua"
 
 
 def test_plot_override_survives_global_regression_change(small_network, counted_solves):
@@ -189,7 +189,7 @@ def test_sidebar_curve_dialog_and_lazy_geometry_tab(small_network):
 
 def test_outside_bankfull_diagnostics_collapsed_and_layer_labels(small_network):
     st.cache_data.clear()
-    at = AppTest.from_file(ROOT / "app.py", default_timeout=30).run()
+    at = champ_app().run()
     at.selectbox(key="stage").set_value("steelhead_spawning").run()
     send_map_selection(at, 23428544)
     assert not at.exception

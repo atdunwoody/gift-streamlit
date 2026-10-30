@@ -34,8 +34,10 @@ needed by the running app.
    launcher uses that interpreter, starts Streamlit, and opens
    **http://localhost:8501**. Stop the terminal with **Ctrl+C**.
 
-The prepared monthly overview is included. Default CHaMP startup loads it and displays the map
-without computing any native hydraulic curves. Select a stream segment or a
+The prepared CHaMP monthly overview is included. The app defaults to CHaMP bankfull
+width and Castro and Jackson mean bankfull depth. The first load solves and caches
+that network scenario. Selecting CHaMP for both dimensions uses the prepared overview
+without computing native hydraulic curves. Select a stream segment or a
 comparison point to calculate that segment's hydraulic and habitat flow-response
 curves. A bounded server cache reuses the physical solution across repeat clicks,
 life stages, assessment months, and display units. Old `data/hydraulics/*.bin`
@@ -87,6 +89,8 @@ the cached hydraulics and evaluate habitat; repeat selections reuse both caches.
 
 - Independent network bankfull width and mean-depth regressions above the map: CHaMP Regression,
   Bieger 2015 National, Bieger 2015 Regional, and Castro and Jackson 2001.
+  Defaults are CHaMP width and Castro and Jackson mean depth. HSI/WUA metric
+  buttons sit beside these selectors, directly above the map.
   Selections apply to all segments, the inspector, comparison plots, and exports.
 - Per-segment width, mean depth, slope, and D84 overrides apply only to response
   plots, the channel cross section, and selected-segment downloads. Choices
@@ -97,7 +101,8 @@ the cached hydraulics and evaluate habitat; repeat selections reuse both caches.
   uses GIFT width/mean depth/100 for shape. Entered maximum depth overrides this
   behavior for the selected plot and must be at least the mean bankfull depth.
   See `HYDRAULIC_OPTIONS.md` for equations, units, scope, and averaging.
-- A mean-HSI on/off switch, off by default. The default map uses median habitat
+- A Map mean HSI / Map mean WUA on/off switch, off by default. Its label and mapped
+  values follow the selected habitat metric. The default map uses median habitat
   at selected monthly flows. Mean mode averages each segment's entire modeled
   flow-response curve over discharge using 201 equally spaced flow samples.
   It is not a temporal or flow-duration-weighted average. Monthly sidebar controls
@@ -118,12 +123,17 @@ the cached hydraulics and evaluate habitat; repeat selections reuse both caches.
   mode or the full-curve average in mean mode.
 - Network layers: GIFT habitat, Temperature Suitability, and Provisional Priority.
   Temperature colors place tan at 80% of the observed maximum, with matching legend stops.
-- Four selectable scatterplots: HSI versus temperature suitability, Provisional Model
-  priority, depth suitability, and velocity suitability. The y axis starts at
-  zero and extends 5% above the highest plotted HSI. Zero-only and empty plots
+- Five selectable scatterplots: habitat versus temperature suitability, Provisional Model
+  priority, depth suitability, velocity suitability, and substrate suitability.
+  The Plot WUA on/off button above the graphs selects HSI (off) or WUA (on),
+  independently of the map metric. The y axis starts at
+  zero and extends 5% above the highest plotted value. Zero-only and empty plots
   use a nonzero fallback range.
 - The map offers HSI and raw WUA. The normalized WUA/width ratio is removed
-  from controls and CSV exports. HSI comparisons remain HSI when the map shows WUA.
+  from controls and CSV exports. Both metrics are available in mean-map mode.
+- Chinook - Spawning uses only the supplied stream/river spawning curves.
+  The large-river spawning curve set is not offered. The general curve set is
+  labeled General salmonid.
 - Unavailable-result diagnostics show the prepared GIFT geometry, shape factor,
   modeled flow bounds, curve ranges, monthly inputs, and availability reasons.
   A JSON download retains full input values and the active curves in SI units.
@@ -157,9 +167,9 @@ depth/velocity suitability. Missing hydraulic predictors remain unavailable.
 | --- | --- | --- |
 | Chinook juvenile rearing | July–September | Late-summer assessment; juveniles also rear in other months |
 | Steelhead juvenile rearing | July–September | Late-summer assessment; rearing spans multiple seasons |
-| Chinook spawning, both supplied curve groups | August–September | Upper Grande Ronde spring/summer stocks |
+| Chinook - Spawning (stream/river curves) | August–September | Upper Grande Ronde spring/summer stocks |
 | Steelhead spawning | March–June | Basin spawning window; monthly means approximate partial-month endpoints |
-| General salmonid sensitivity | July–September | Study scenario, not calibrated life-stage timing |
+| General salmonid | July–September | Assessment period, not calibrated life-stage timing |
 
 These are editable study defaults, not universal occupancy windows. Their sources
 and qualifications are retained in `settings.py` and the app's sidebar. Custom

@@ -1,4 +1,4 @@
-"""Check zero startup solves, cache reuse, fresh inputs, and numerical parity."""
+"""Check CHaMP overview startup, cache reuse, fresh inputs, and numerical parity."""
 import copy
 import json
 from pathlib import Path
@@ -16,7 +16,7 @@ import habitat_engine as engine
 import prepare_data
 import runtime_data
 import tools.prepare_network as preparation
-from test_app import send_map_selection
+from test_app import champ_app, send_map_selection
 from test_data_preparation import configured_inputs
 
 
@@ -38,7 +38,7 @@ def counted_solves(monkeypatch):
 
 
 def test_startup_and_clicks_use_only_selected_hydraulics(counted_solves):
-    at = AppTest.from_file(ROOT / "app.py", default_timeout=30).run()
+    at = champ_app().run()
     assert not at.exception and not at.error
     assert counted_solves == []
     assert at.session_state.selected_id is None
@@ -65,7 +65,7 @@ def test_startup_never_depends_on_native_files(tmp_path, monkeypatch, counted_so
         if snapshot == "corrupt":
             (config.DATA_DIRECTORY / "network.json").write_text("corrupt")
     monkeypatch.setattr(prepare_data, "load_settings", lambda: copy.deepcopy(config))
-    at = AppTest.from_file(ROOT / "app.py", default_timeout=30).run()
+    at = champ_app().run()
     assert not at.exception and not at.error
     assert counted_solves == []
     assert not (config.DATA_DIRECTORY / "hydraulics").exists()
@@ -80,7 +80,7 @@ def test_startup_never_depends_on_native_files(tmp_path, monkeypatch, counted_so
 def test_changed_reach_updates_map_and_inputs_without_bulk_build(configured_inputs, monkeypatch, counted_solves):
     config = configured_inputs
     monkeypatch.setattr(prepare_data, "load_settings", lambda: copy.deepcopy(config))
-    at = AppTest.from_file(ROOT / "app.py", default_timeout=30).run()
+    at = champ_app().run()
     assert not at.exception and counted_solves == []
     assert any("2 segments await habitat calculation" in item.value for item in at.info)
     send_map_selection(at, 10)
@@ -100,8 +100,8 @@ def test_changed_reach_updates_map_and_inputs_without_bulk_build(configured_inpu
 def test_sessions_with_different_evaluated_reaches_keep_their_own_overview(configured_inputs, monkeypatch, counted_solves):
     config = configured_inputs
     monkeypatch.setattr(prepare_data, "load_settings", lambda: copy.deepcopy(config))
-    first = AppTest.from_file(ROOT / "app.py", default_timeout=30).run()
-    second = AppTest.from_file(ROOT / "app.py", default_timeout=30).run()
+    first = champ_app().run()
+    second = champ_app().run()
     send_map_selection(first, 10)
     send_map_selection(second, 20)
     for app, expected in ((first, 10), (second, 20)):

@@ -185,12 +185,12 @@ def test_duplicate_join_ids_are_rejected(configured_inputs):
 
 
 def test_app_reload_updates_displayed_width_and_sources(configured_inputs, monkeypatch):
-    from streamlit.testing.v1 import AppTest
+    from test_app import champ_app
     import prepare_data
 
     config = configured_inputs
     monkeypatch.setattr(prepare_data, "load_settings", lambda: copy.deepcopy(config))
-    at = AppTest.from_file(ROOT / "app.py", default_timeout=30).run()
+    at = champ_app().run()
     assert not at.exception and not at.error
     at.session_state.selected_id = 10
     at.run()

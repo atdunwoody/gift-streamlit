@@ -106,6 +106,7 @@ def r_monthly():
     # with new source geometry or regenerate reference values using Python.
     _, curves = load_dataset(ROOT / "data")
     reference = pd.read_csv(REFERENCE / "monthly.csv")
+    reference = reference[reference.curve.isin(c["id"] for c in curves)]
     flows = pd.read_csv(REFERENCE / "monthly_inputs.csv")
     features = []
     for case in CASES:

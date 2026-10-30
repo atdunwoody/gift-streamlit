@@ -69,12 +69,6 @@
         "source": "https://www.fws.gov/sites/default/files/documents/Upper%20Grande%20Ronde%20SPCH.pdf",
         "note": "Upper Grande Ronde spring/summer Chinook spawning; does not represent fall Chinook timing."
       },
-      "chinook_spawning_large_river": {
-        "start": 8,
-        "end": 9,
-        "source": "https://www.fws.gov/sites/default/files/documents/Upper%20Grande%20Ronde%20SPCH.pdf",
-        "note": "Upper Grande Ronde spring/summer Chinook spawning; adjust for other stocks."
-      },
       "steelhead_juvenile_rearing": {
         "start": 7,
         "end": 9,
@@ -91,7 +85,7 @@
         "start": 7,
         "end": 9,
         "source": "",
-        "note": "Late-summer sensitivity scenario, not a calibrated species or life-stage timing window."
+        "note": "Late-summer assessment period, not a calibrated species or life-stage timing window."
       }
     }
   },
@@ -142,21 +136,6 @@
       "sha256": "f0abf65c8060feaf04dbeab23c12792f68b9488436e6cc256918f64cc7cac79b"
     },
     {
-      "role": "curve:chinook_spawning_large_river:depth",
-      "path": "inputs/curves/chinook_spawning_large_river_depth.csv",
-      "sha256": "a4dc126ddbac320a66631b98cc0c2f461cee07769d4894596904df698d079c65"
-    },
-    {
-      "role": "curve:chinook_spawning_large_river:velocity",
-      "path": "inputs/curves/chinook_spawning_large_river_velocity.csv",
-      "sha256": "bea4eec322b9025f9cc8bb0b5328056137608a5d06cbc0c8af33a562c738d18c"
-    },
-    {
-      "role": "curve:chinook_spawning_large_river:substrate",
-      "path": "inputs/curves/chinook_spawning_large_river_substrate.csv",
-      "sha256": "f0abf65c8060feaf04dbeab23c12792f68b9488436e6cc256918f64cc7cac79b"
-    },
-    {
       "role": "curve:steelhead_juvenile_rearing:depth",
       "path": "inputs/curves/steelhead_juvenile_rearing_depth.csv",
       "sha256": "56d70ea3c5d71a573af6a7c39efec51b13e1d74f857486ea1ef8ed85f6af476d"
@@ -204,12 +183,12 @@
   ],
   "calculationCodeSHA256": {
     "prepare_data.py": "b4b8346849d2f5131ba45dead75a7827421af432a5eafef9efec5b62e7e4141c",
-    "tools/prepare_network.py": "8c68b53912e89da4252c9f056ccd81687dd9327cf27ef1a5a109b0444f205d4e",
+    "tools/prepare_network.py": "14707415a2dae62cea2a69f8b1c42bf9093dd14189ff40cb3c02145d953897dd",
     "model/gift_habitat/hydraulics.py": "f6a0875ddf2689b8effae29e9afc31b90f4dbb17840a26e4452c80cb5d9f2e41",
     "model/gift_habitat/habitat.py": "36b992c28fa127bde0f450336d1c3a11a75226aa590721b2937b50adc80cecfe",
     "model/gift_habitat/_validation.py": "87cf868780ce20befcfeccb449ae08e915bfc4ade3f1e5dd70942c7bf1118e80"
   },
-  "fingerprint": "a6f7e15fef1488b7f9f136523e87f4afcc88f543a577ae8c6062920055c8dc82",
+  "fingerprint": "967106f7ff705456b4d36a029ead440298f42e573b94157aebe38ab3c3f5c7c2",
   "outputs": {
     "curves/chinook_juvenile_rearing_depth.csv": "d9142eea7e8d498ae0452701d8eed4165535d79088669d130249551faebe8ea4",
     "curves/chinook_juvenile_rearing_substrate.csv": "7618e29ee1dc054ab494a22617ba4f376825d5ca5e17e0709aaa53ae4d2816b8",
@@ -229,7 +208,7 @@
     "curves/steelhead_spawning_depth.csv": "84a7b3372fb671dca1776e6b4a9fb5f3f79aa01e0ba14f6a440a03164399d796",
     "curves/steelhead_spawning_substrate.csv": "1f8acafea31d31c3b821835abdafcfd40f806f6285804e4e21a368c3effcf6db",
     "curves/steelhead_spawning_velocity.csv": "54acb6342e1a6e10510dd36fa3142d4dd09002a57617b532e48f183bb39b845d",
-    "curves.json": "3abc1a39137c0d8c946c247514d9b1f0f1a0129b360440865cbe367cdc2599c0",
+    "curves.json": "2fe7070f2371b4cc287c9f48cf7e19d2d00a9c0badb26a8d895534015739f002",
     "hydraulics/23428370.bin": "5298b0aa7540ca4500506f347703eb910c57923d5621f1efd857d221abb1ae5d",
     "hydraulics/23428372.bin": "fd898f483aa042dcad199cdd0992b98af13558553c00f43b08fccd5046cb322b",
     "hydraulics/23428374.bin": "352fa048b5920aa1f6159ef410b6d7c0726aa3ada4ee14c6611559879b4d6911",
@@ -959,7 +938,7 @@
     "hydraulics/947060054.bin": "80a85233af9d0439a60bcfd5efcee99b9a362a0eb5d6207e52e15712d2abe554",
     "network.json": "c8d4ffd31499fa7a65c209f68796626b2b08b05fe2b4817ff8ae8d1959bdfec5"
   },
-  "builtAt": "2026-10-23T15:59:07.962820+00:00",
+  "builtAt": "2026-10-30T16:30:47.464073+00:00",
   "aggregation": "Median of separately evaluated monthly habitat results.",
   "requireAllMonthsDefault": true
 }

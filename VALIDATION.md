@@ -1,5 +1,31 @@
 # Validation record
 
+## Spawning curves and habitat metric controls, 2026-10-30
+
+**136 automated tests passed:** two bundled-data portability checks and 134
+scientific, preparation, and app-state checks through `run_checks.py`.
+The latter completed in 56.47 seconds in the verification environment.
+
+Checks verify the CHaMP-width/Castro-and-Jackson-depth defaults, unchanged
+stream/river Chinook spawning CSV values, the single spawning option and revised
+labels, migration of an existing large-river selection, and HSI/WUA metric
+buttons before the map. Mean-map values match the corresponding numerical HSI
+and WUA summaries, and changing the metric preserves mean mode and disabled
+monthly controls. All five comparison plots use the selected comparison metric;
+substrate coordinates match substrate suitability, and clicking those points
+selects and locates the corresponding reach. The independent comparison switch
+does not change the map metric.
+
+The supplied curve CSVs, original hydraulic equations, input GeoPackages,
+prepared CHaMP hydraulic overview, and pinned dependencies were checked against
+the uploaded archive and remain byte-identical. Active curve definitions and
+their preparation manifest were updated. Frozen-R comparisons retain the five
+active curve groups. The earlier CHaMP overview and cache checks still pass when
+CHaMP is explicitly selected for both dimensions.
+
+These checks used Streamlit AppTest and numerical references. No external
+deployment was performed. The dated records below describe earlier versions.
+
 ## Editable inputs and supplied defaults, 2026-10-26
 
 **132 automated tests passed.** Checks include the existing frozen-R numerical

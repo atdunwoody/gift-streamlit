@@ -25,6 +25,7 @@ COMPARISON_FIELDS = {
     "Provisional Model priority": ("feature", "priority"),
     "Depth suitability": ("summary", "d"),
     "Velocity suitability": ("summary", "v"),
+    "Substrate suitability": ("summary", "s"),
 }
 
 

@@ -1,8 +1,8 @@
 # Network and selected-segment hydraulic options
 
 Use the **bankfull regression controls above the map** to choose independent width
-and mean-depth regressions for every segment. The default is CHaMP Regression
-for both dimensions. The map, inspector, comparison plots, and network export
+and mean-depth regressions for every segment. The defaults are CHaMP Regression
+for width and Castro and Jackson 2001 for mean depth. The map, inspector, comparison plots, and network export
 use these network choices. Bieger options are labeled **Bieger 2015 National**
 and **Bieger 2015 Regional**.
 
@@ -59,31 +59,34 @@ It follows the active segment plot inputs. Axes use metres; vertical exaggeratio
 is stated. This is GIFT's assumed section, not a surveyed section. Maximum depth
 shown there is the geometry resulting from the automatic behavior or the explicit plot input.
 
-## Selected-flow map versus mean-HSI map
+## Selected-flow map versus mean-habitat map
 
-The mean-HSI switch defaults off. The default map is unchanged: habitat is
+The mean-map switch defaults off. Its label is **Map mean HSI** or **Map mean WUA**,
+following the metric buttons beside the regression selectors. By default, habitat is
 calculated at each exact monthly EROM flow, then the median of selected months
 is mapped. Complete/partial-period rules still apply.
 
-With the switch on, each segment's mean HSI over its full modeled flow curve is
+With the switch on, each segment's mean HSI or WUA over its full modeled flow curve is
 mapped. This is a separate mean for each segment, not one basin-wide number.
 The calculation uses 201 equally spaced discharges from the native modeled
 minimum to bankfull, linearly interpolates hydraulic variables, evaluates the
 existing GIFT habitat equations at each discharge, and divides the trapezoidal
-integral of HSI by the modeled discharge range. It does not extrapolate to zero
+integral of the selected metric by the modeled discharge range. It does not extrapolate to zero
 or above bankfull. This is an average over discharge, not a time mean and not
 weighted by flow duration. Mean component suitability is reported separately;
 mean HSI is not obtained by multiplying mean components.
 
-Mean mode drives the habitat map, inspector, HSI comparisons, and network
+Mean mode drives the habitat map, inspector, comparison plots, and network
 summary export. The month/range controls are disabled, and the inspector shows
 full-curve means instead of monthly flow information. HSI/WUA plots omit monthly
 markers, the inspected-month highlight, and selected-flow shading. A gold diamond
 shows the curve mean, placed at the modeled discharge-range midpoint. Its height
 is the integral mean, not necessarily the curve's value at that discharge.
 Local plot edits update this point while network means stay unchanged.
-Switching off restores monthly controls and results. HSI is the map metric in
-mean mode; switching off restores the prior HSI/WUA choice. Temperature and provisional priority values remain unchanged.
+Switching off restores monthly controls and results. The HSI/WUA buttons remain
+available in mean mode. The independent **Plot WUA** switch above the comparisons
+selects HSI (off) or WUA (on) for all five comparison plots, including substrate
+suitability. Temperature and provisional priority values remain unchanged.
 
 ## Curve viewer and the Shiny preset
 
@@ -99,8 +102,9 @@ See `inputs/curves/SHINY_DEFAULT_SOURCE.md` and the frozen SHA-256 reference.
 
 ## Performance and exports
 
-Default CHaMP startup still performs zero hydraulic solves and uses the bundled
-monthly overview. Changing a network regression solves the network on demand.
+CHaMP width with CHaMP depth performs zero startup hydraulic solves and uses the
+bundled monthly overview. The default CHaMP-width/Castro-and-Jackson-depth scenario
+is solved and cached on first load, as are other network regression combinations.
 Two complete physical scenarios are cached independently of suitability curves;
 monthly and full-flow habitat summaries have their own bounded caches. Selecting
 a segment and changing plot overrides use the existing per-segment caches.
